@@ -1,8 +1,10 @@
 ## ============================================================
 ## Ingress for Keycloak UI
-## Hostname: keycloak.local  →  http://keycloak.local
+## Hostname: keycloak.local  →  https://keycloak.local
+## HTTP (port 80) redirects to HTTPS (port 443).
 ##
 ## /etc/hosts entry required:  127.0.0.1  keycloak.local
+## TLS secret: keycloak-local-tls  (created by k8s-oidc/setup.sh)
 ## ============================================================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -19,8 +21,15 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
     # Increase body size limit for Keycloak admin API calls
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # Redirect HTTP → HTTPS
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 spec:
   ingressClassName: nginx
+  tls:
+    - secretName: keycloak-local-tls
+      hosts:
+        - keycloak.local
   rules:
     - host: keycloak.local
       http:

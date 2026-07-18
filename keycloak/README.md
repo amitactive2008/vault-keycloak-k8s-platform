@@ -7,20 +7,21 @@ Production-grade Keycloak 26.3.3 deployed on a local kind cluster using official
 ## Architecture
 
 ```
-                         ┌─────────────────────────────┐
-Browser ──► 127.0.0.1:80 │  kind node (control-plane)  │
-                         │   nginx Ingress Controller   │
-                         └──────────────┬──────────────┘
-                                        │ keycloak.local
-                         ┌──────────────▼──────────────┐
-                         │  Namespace: keycloak         │
-                         │                              │
-                         │  Keycloak 26.3.3 (Deployment)│
-                         │  quay.io/keycloak/keycloak   │
-                         │         │                    │
-                         │  PostgreSQL 17 (StatefulSet) │
-                         │  docker.io/library/postgres  │
-                         └─────────────────────────────┘
+                              ┌─────────────────────────────┐
+Browser ──► 127.0.0.1:80      │  kind node (control-plane)  │
+            (308 → :443)      │   nginx Ingress Controller   │
+Browser ──► 127.0.0.1:443     │   TLS terminated             │
+                              └──────────────┬──────────────┘
+                                             │ keycloak.local
+                         ┌───────────────────▼─────────────┐
+                         │  Namespace: keycloak             │
+                         │                                  │
+                         │  Keycloak 26.3.3 (Deployment)    │
+                         │  quay.io/keycloak/keycloak       │
+                         │         │                        │
+                         │  PostgreSQL 17 (StatefulSet)     │
+                         │  docker.io/library/postgres      │
+                         └──────────────────────────────────┘
 ```
 
 | Component   | Image                              | Version |
@@ -51,7 +52,7 @@ keycloak/
 ├── namespace.yaml            ← Namespace: keycloak
 ├── postgres.yaml             ← PostgreSQL 17 StatefulSet + Service + Secret
 ├── keycloak.yaml             ← Keycloak 26 Deployment + Service + Secret (performance-tuned)
-├── ingress.yaml              ← nginx Ingress (keycloak.local → port 80; TLS on 443)
+├── ingress.yaml              ← nginx Ingress: keycloak.local — HTTP:80 → HTTPS:443 redirect
 ├── kind-realm.json           ← Realm definition imported on first boot
 ├── helm-values.yaml          ← Reference Bitnami chart values (kept for reference, not used)
 ├── vault-integration/        ← Vault ↔ Keycloak OIDC wiring
@@ -109,7 +110,7 @@ sudo sh -c 'echo "127.0.0.1  keycloak.local" >> /etc/hosts'
 
 | Field    | Value |
 |----------|-------|
-| URL      | http://keycloak.local/admin |
+| URL      | https://keycloak.local/admin |
 | Username | `admin` |
 | Password | `Admin@Keycloak2024!` |
 
@@ -144,7 +145,7 @@ All users have the password `password`.
 
 ### Realm OIDC endpoints
 
-HTTP (used by Vault internal OIDC):
+HTTP (used internally by Vault pods via CoreDNS — bypasses the ingress redirect):
 ```
 Discovery:   http://keycloak.local/realms/kind/.well-known/openid-configuration
 Token:       http://keycloak.local/realms/kind/protocol/openid-connect/token
@@ -214,12 +215,11 @@ Group-to-Vault access after setup:
 
 Vault login:
 ```bash
-# Browser (both work):
-#   http://vault-webui.local  → OIDC → role: default
+# Browser (http redirects automatically to https via 308):
 #   https://vault-webui.local → OIDC → role: default
 
 # CLI:
-vault login -method=oidc -address=http://vault-webui.local role=default
+vault login -method=oidc -address=https://vault-webui.local role=default
 ```
 
 ---
@@ -297,7 +297,8 @@ kubectl exec -n keycloak deployment/keycloak -- \
   /opt/keycloak/bin/kcadm.sh get users -r kind
 
 # Get an access token for a user (useful for API testing)
-curl -s -X POST http://keycloak.local/realms/kind/protocol/openid-connect/token \
+curl -s -X POST https://keycloak.local/realms/kind/protocol/openid-connect/token \
+  --cacert keycloak/k8s-oidc/keycloak-local-ca.crt \
   -d "client_id=admin-cli&grant_type=password&username=devops-user-1&password=password" \
   | python3 -m json.tool
 ```

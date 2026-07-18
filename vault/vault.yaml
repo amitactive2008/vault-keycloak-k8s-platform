@@ -370,8 +370,9 @@ server:
       nginx.ingress.kubernetes.io/proxy-buffer-size: "512k"
       nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
       nginx.ingress.kubernetes.io/proxy-body-size: "0"
-      # Keep HTTP working alongside HTTPS (no forced redirect)
-      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+      # Redirect HTTP → HTTPS
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 
     # Optionally use ingressClassName instead of deprecated annotation.
     # See: https://kubernetes.io/docs/concepts/services-networking/ingress/#deprecated-annotation

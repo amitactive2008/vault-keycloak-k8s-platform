@@ -123,7 +123,9 @@ chmod +x vault-setup.sh
 # Deploy the application
 kubectl apply -f application/team-a-webapp/serviceaccount.yaml
 kubectl apply -f application/team-a-webapp/postgres.yaml
+kubectl apply -f application/team-a-webapp/backend-configmap.yaml
 kubectl apply -f application/team-a-webapp/backend.yaml
+kubectl apply -f application/team-a-webapp/frontend-configmap.yaml
 kubectl apply -f application/team-a-webapp/frontend.yaml
 kubectl apply -f application/team-a-webapp/ingress.yaml
 
@@ -137,12 +139,12 @@ Open http://team-a-webapp.local in your browser.
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Vault UI | http://vault-webui.local or https://vault-webui.local | root token from `vault/cluster-keys.json` |
-| Vault OIDC login | http://vault-webui.local → OIDC → role `default` | Keycloak users (password: `password`) |
-| Keycloak Admin | http://keycloak.local/admin or https://keycloak.local/admin | `admin` / `Admin@Keycloak2024!` |
-| Keycloak kind realm | http://keycloak.local/realms/kind or https://keycloak.local/realms/kind | — |
+| Vault UI | https://vault-webui.local (http → https) | root token from `vault/cluster-keys.json` |
+| Vault OIDC login | https://vault-webui.local → OIDC → role `default` | Keycloak users (password: `password`) |
+| Keycloak Admin | https://keycloak.local/admin (http → https) | `admin` / `Admin@Keycloak2024!` |
+| Keycloak kind realm | https://keycloak.local/realms/kind (http → https) | — |
 
-> Both HTTP and HTTPS work for Vault and Keycloak. HTTPS uses a self-signed CA (`keycloak/k8s-oidc/keycloak-local-ca.crt`). Trust it once in your macOS keychain:
+> HTTP (port 80) redirects to HTTPS (port 443) for both Vault and Keycloak via a 308 permanent redirect — browsers follow automatically. HTTPS uses a self-signed CA (`keycloak/k8s-oidc/keycloak-local-ca.crt`). Trust it once in your macOS keychain:
 > ```bash
 > sudo security add-trusted-cert -d -r trustRoot \
 >   -k /Library/Keychains/System.keychain \
