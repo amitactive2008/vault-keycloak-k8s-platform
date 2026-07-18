@@ -1,0 +1,2 @@
+# Vault unseal keys and root token — NEVER commit this
+cluster-keys.json

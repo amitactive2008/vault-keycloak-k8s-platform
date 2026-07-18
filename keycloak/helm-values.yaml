@@ -1,0 +1,172 @@
+## ============================================================
+## Bitnami Keycloak Helm Chart — Production-grade values
+## Target: Local kind cluster  |  Namespace: keycloak
+## Chart:  helm repo add bitnami https://charts.bitnami.com/bitnami
+##         helm install keycloak bitnami/keycloak -f helm-values.yaml
+## ============================================================
+
+## ----------------------------------------------------------------
+## Authentication
+## ----------------------------------------------------------------
+auth:
+  adminUser: admin
+  adminPassword: "Admin@Keycloak2024!"
+
+## ----------------------------------------------------------------
+## Run in production mode with proxy=edge (nginx terminates TLS)
+## Set production: false to allow plain HTTP from the ingress
+## ----------------------------------------------------------------
+production: false
+proxy: edge
+
+## ----------------------------------------------------------------
+## Replicas
+## For real HA set to 2+ and enable pdb below.
+## Keep 1 for a resource-constrained local kind cluster.
+## ----------------------------------------------------------------
+replicaCount: 1
+
+## ----------------------------------------------------------------
+## PostgreSQL — replaces the default H2 in-memory store
+## ----------------------------------------------------------------
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "Postgres@2024!"
+    username: keycloak
+    password: "Keycloak@2024!"
+    database: keycloak
+  primary:
+    persistence:
+      enabled: true
+      size: 4Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+## ----------------------------------------------------------------
+## Keycloak pod resources
+## ----------------------------------------------------------------
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "1500m"
+    memory: 2Gi
+
+## ----------------------------------------------------------------
+## Service
+## ----------------------------------------------------------------
+service:
+  type: ClusterIP
+  ports:
+    http: 80
+    https: 443
+
+## ----------------------------------------------------------------
+## Ingress  →  http://keycloak.local
+## Add to /etc/hosts:  127.0.0.1  keycloak.local
+## ----------------------------------------------------------------
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  hostname: keycloak.local
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+  tls: false
+
+## ----------------------------------------------------------------
+## Logging
+## ----------------------------------------------------------------
+logging:
+  output: default
+  level: INFO
+
+## ----------------------------------------------------------------
+## Startup / Liveness / Readiness probes
+## Keycloak (with DB init) can take 90–120 s on first boot.
+## ----------------------------------------------------------------
+startupProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 60
+  successThreshold: 1
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 0
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+## ----------------------------------------------------------------
+## keycloakConfigCli — imports the "kind" realm after install
+## The ConfigMap "keycloak-realm-import" is created by install.sh
+## from kind-realm.json before helm install runs.
+## ----------------------------------------------------------------
+keycloakConfigCli:
+  enabled: true
+  existingConfigmap: keycloak-realm-import
+  backoffLimit: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+  # Clean up the finished Job automatically
+  cleanupAfterFinished:
+    enabled: true
+    seconds: 300
+
+## ----------------------------------------------------------------
+## Pod Disruption Budget
+## Uncomment when replicaCount >= 2
+## ----------------------------------------------------------------
+pdb:
+  create: false
+  # minAvailable: 1
+
+## ----------------------------------------------------------------
+## Service Account
+## ----------------------------------------------------------------
+serviceAccount:
+  create: true
+  automountServiceAccountToken: false
+
+## ----------------------------------------------------------------
+## Security contexts
+## ----------------------------------------------------------------
+podSecurityContext:
+  enabled: true
+  fsGroup: 1001
+
+containerSecurityContext:
+  enabled: true
+  runAsUser: 1001
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL

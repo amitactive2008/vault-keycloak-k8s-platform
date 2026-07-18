@@ -1,0 +1,186 @@
+# Backend — Python HTTP server with Vault Agent sidecar injection
+#
+# Vault Agent (injected by vault-agent-injector) authenticates using the
+# webapp-backend service account token, fetches the DB credentials from
+# secret/data/team-a/webapp/db, and renders them to /vault/secrets/db.env.
+# The backend process sources that file at startup.
+#
+# Flow:
+#   vault-agent (init container) → fetches secret → writes /vault/secrets/db.env
+#   vault-agent (sidecar)        → renews lease, re-renders on rotation
+#   backend container            → reads /vault/secrets/db.env
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-script
+  namespace: team-a
+data:
+  server.py: |
+    #!/usr/bin/env python3
+    """
+    Minimal backend API server.
+    Reads Vault-injected DB credentials from /vault/secrets/db.env
+    and exposes them (password masked) via a JSON API.
+    """
+    import json
+    import os
+    import socket
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    VAULT_SECRET_FILE = "/vault/secrets/db.env"
+
+    def load_db_creds():
+        """Parse the shell-export style file written by Vault Agent."""
+        creds = {}
+        try:
+            with open(VAULT_SECRET_FILE) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("export "):
+                        line = line[len("export "):]
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        creds[k.strip()] = v.strip().strip('"').strip("'")
+        except FileNotFoundError:
+            creds["error"] = "Vault secret not yet injected (/vault/secrets/db.env missing)"
+        except Exception as exc:
+            creds["error"] = str(exc)
+        return creds
+
+    def check_db_connectivity(creds):
+        """TCP-level connectivity check to the DB host:port (no driver needed)."""
+        host = creds.get("DB_HOST", "")
+        port = int(creds.get("DB_PORT", 5432))
+        try:
+            with socket.create_connection((host, port), timeout=2):
+                return True, f"TCP connection to {host}:{port} succeeded"
+        except Exception as exc:
+            return False, str(exc)
+
+    class Handler(BaseHTTPRequestHandler):
+        def _respond(self, code, body):
+            payload = json.dumps(body, indent=2).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_GET(self):
+            if self.path == "/api/health":
+                self._respond(200, {"status": "ok", "pod": os.environ.get("HOSTNAME", "unknown")})
+
+            elif self.path == "/api/db-creds":
+                creds = load_db_creds()
+                display = dict(creds)
+                if "DB_PASSWORD" in display:
+                    display["DB_PASSWORD"] = "***REDACTED***"
+                self._respond(200, {
+                    "vault_injected": "error" not in creds,
+                    "secret_file": VAULT_SECRET_FILE,
+                    "creds": display
+                })
+
+            elif self.path == "/api/db-status":
+                creds = load_db_creds()
+                if "error" in creds:
+                    self._respond(200, {"connected": False, "message": creds["error"]})
+                else:
+                    ok, msg = check_db_connectivity(creds)
+                    self._respond(200, {"connected": ok, "message": msg,
+                                        "host": creds.get("DB_HOST"),
+                                        "port": creds.get("DB_PORT")})
+            else:
+                self._respond(404, {"error": "not found"})
+
+        def log_message(self, fmt, *args):
+            pass  # suppress access log noise
+
+    if __name__ == "__main__":
+        port = int(os.environ.get("PORT", 5000))
+        print(f"Backend listening on :{port}")
+        HTTPServer(("0.0.0.0", port), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-backend
+  namespace: team-a
+  labels:
+    app: webapp-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webapp-backend
+  template:
+    metadata:
+      labels:
+        app: webapp-backend
+      annotations:
+        # ── Vault Agent sidecar injection ─────────────────────────────────────
+        # The vault-agent-injector (deployed via Helm) intercepts this pod and
+        # injects an init container + sidecar that:
+        #   1. Authenticates to Vault using the webapp-backend SA token
+        #      (Kubernetes auth method, role: team-a-webapp)
+        #   2. Renders the template below into /vault/secrets/db.env
+        #   3. Keeps the sidecar running to renew tokens and re-render on rotation
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "team-a-webapp"
+        vault.hashicorp.com/agent-inject-secret-db.env: "secret/data/team-a/webapp/db"
+        vault.hashicorp.com/agent-inject-template-db.env: |
+          {{- with secret "secret/data/team-a/webapp/db" -}}
+          export DB_HOST={{ .Data.data.host }}
+          export DB_PORT={{ .Data.data.port }}
+          export DB_USER={{ .Data.data.username }}
+          export DB_PASSWORD={{ .Data.data.password }}
+          export DB_NAME={{ .Data.data.database }}
+          {{- end -}}
+    spec:
+      serviceAccountName: webapp-backend
+      containers:
+        - name: backend
+          image: python:3.11-slim
+          command: ["python3", "/app/server.py"]
+          ports:
+            - name: http
+              containerPort: 5000
+          env:
+            - name: PORT
+              value: "5000"
+          volumeMounts:
+            - name: app-script
+              mountPath: /app
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: app-script
+          configMap:
+            name: backend-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-backend
+  namespace: team-a
+  labels:
+    app: webapp-backend
+spec:
+  selector:
+    app: webapp-backend
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000

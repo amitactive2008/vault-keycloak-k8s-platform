@@ -1,0 +1,247 @@
+## ============================================================
+## Keycloak 26.x
+## Image: quay.io/keycloak/keycloak:26.3.3  (official image)
+## Mode : production (start + --import-realm)
+## Proxy: nginx edge (X-Forwarded-* headers)
+## ============================================================
+
+# ── Admin Secret ─────────────────────────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-admin-secret
+  namespace: keycloak
+  labels:
+    app: keycloak
+type: Opaque
+stringData:
+  admin-user: admin
+  admin-password: "Admin@Keycloak2024!"  # DEMO ONLY — change for any non-local deployment
+---
+# ── Service ───────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app: keycloak
+spec:
+  type: ClusterIP
+  selector:
+    app: keycloak
+  ports:
+    # Main HTTP port (Keycloak application)
+    - name: http
+      port: 80
+      targetPort: 8080
+    # Management port (health / metrics — NOT exposed externally)
+    - name: management
+      port: 9000
+      targetPort: 9000
+---
+# ── Deployment ────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app: keycloak
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/version: "26.3.3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  # Recreate strategy is safer for single-replica Keycloak with shared DB
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: keycloak
+        app.kubernetes.io/name: keycloak
+    spec:
+      # ── Wait for PostgreSQL before starting Keycloak ─────────
+      initContainers:
+        - name: wait-for-postgres
+          image: docker.io/library/postgres:17
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL to be ready..."
+              until pg_isready -h keycloak-postgresql -p 5432 -U keycloak; do
+                echo "PostgreSQL not ready yet — sleeping 3s"
+                sleep 3
+              done
+              echo "PostgreSQL is ready."
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.3.3
+          imagePullPolicy: IfNotPresent
+
+          # Start in production mode and import the realm on first boot
+          args:
+            - start
+            - --import-realm
+
+          env:
+            # ── Database ──────────────────────────────────────
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://keycloak-postgresql:5432/keycloak
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-postgresql-secret
+                  key: username
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-postgresql-secret
+                  key: password
+
+            # ── DB connection pool (pre-warm; avoids cold-query latency) ─
+            - name: KC_DB_POOL_INITIAL_SIZE
+              value: "5"
+            - name: KC_DB_POOL_MIN_SIZE
+              value: "5"
+            - name: KC_DB_POOL_MAX_SIZE
+              value: "20"
+
+            # ── HTTP / Proxy ───────────────────────────────────
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+
+            # ── Cache ─────────────────────────────────────────
+            # local = no distributed-cache overhead (single replica).
+            # Switch to "ispn" only when running 2+ replicas for HA.
+            - name: KC_CACHE
+              value: local
+
+            # ── Transactions ──────────────────────────────────
+            # Disable XA transactions — faster for single-DB deployments.
+            - name: KC_TRANSACTION_XA_ENABLED
+              value: "false"
+
+            # ── Logging ───────────────────────────────────────
+            # WARN level reduces logging I/O by ~80 % vs INFO.
+            - name: KC_LOG_LEVEL
+              value: WARN
+
+            # ── Health / Metrics ──────────────────────────────
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_METRICS_ENABLED
+              value: "true"
+
+            # ── Admin bootstrap credentials (Keycloak 26+) ───
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin-secret
+                  key: admin-user
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin-secret
+                  key: admin-password
+
+            # ── JVM tuning ────────────────────────────────────
+            # G1GC: low-latency GC, ideal for request-serving workloads.
+            # MinRAMPercentage=50 → JVM starts with 50% of pod memory as heap.
+            # MaxRAMPercentage=75 → JVM may grow to 75% of pod memory.
+            # MaxGCPauseMillis=200 → target GC stop-the-world ≤ 200 ms.
+            # DisableExplicitGC → ignore System.gc() calls (prevents spikes).
+            - name: JAVA_OPTS_APPEND
+              value: >-
+                -XX:+UseG1GC
+                -XX:+UseContainerSupport
+                -XX:MinRAMPercentage=50.0
+                -XX:MaxRAMPercentage=75.0
+                -XX:MaxGCPauseMillis=200
+                -XX:G1ReservePercent=15
+                -XX:+DisableExplicitGC
+                -Djava.net.preferIPv4Stack=true
+
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+
+          # Mount realm JSON for --import-realm
+          # ConfigMap key "kind-realm.json" becomes the file at mountPath
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+
+          resources:
+            requests:
+              cpu: "1000m"   # 1 full CPU — JIT compilation needs unthrottled bursts
+              memory: 1536Mi
+            limits:
+              cpu: "2000m"   # Allow up to 2 CPUs for GC / JIT peaks
+              memory: 3Gi    # 75% of 3Gi = ~2.3 Gi heap via MaxRAMPercentage
+
+          # Keycloak can take 90-120 s on first boot (DB schema creation)
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 60   # 30 + 60×10 = 630 s max wait
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 9000
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+      volumes:
+        - name: realm-import
+          configMap:
+            # Created by install.sh step 3 (--from-file=kind-realm.json)
+            name: keycloak-realm-import
+
+      securityContext:
+        fsGroup: 1000
