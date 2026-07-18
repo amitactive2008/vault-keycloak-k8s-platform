@@ -52,13 +52,15 @@ nginx Ingress (ingress-nginx)
 
 ```
 application/team-a-webapp/
-├── vault-setup.sh        ← one-time Vault configuration script
-├── vault-rbac.yaml       ← RBAC: grants vault SA permission to issue K8s tokens
-├── serviceaccount.yaml   ← webapp-backend ServiceAccount (used by Vault Agent auth)
-├── postgres.yaml         ← PostgreSQL StatefulSet + headless Service + init Secret
-├── backend.yaml          ← Python API server + Vault Agent sidecar annotations
-├── frontend.yaml         ← nginx SPA + /api/ reverse proxy
-└── ingress.yaml          ← ingress-nginx on team-a-webapp.local
+├── vault-setup.sh           ← one-time Vault configuration script
+├── vault-rbac.yaml          ← RBAC: grants vault SA permission to issue K8s tokens
+├── serviceaccount.yaml      ← webapp-backend ServiceAccount (used by Vault Agent auth)
+├── postgres.yaml            ← PostgreSQL StatefulSet + headless Service + init Secret
+├── backend-configmap.yaml   ← ConfigMap: server.py (Python API server script)
+├── backend.yaml             ← Python API Deployment + Service + Vault Agent sidecar annotations
+├── frontend-configmap.yaml  ← ConfigMap: nginx.conf + index.html
+├── frontend.yaml            ← nginx SPA Deployment + Service
+└── ingress.yaml             ← ingress-nginx: routes /api/* → backend, /* → frontend
 ```
 
 ---
@@ -104,7 +106,9 @@ The script:
 ```bash
 kubectl apply -f application/team-a-webapp/serviceaccount.yaml
 kubectl apply -f application/team-a-webapp/postgres.yaml
+kubectl apply -f application/team-a-webapp/backend-configmap.yaml
 kubectl apply -f application/team-a-webapp/backend.yaml
+kubectl apply -f application/team-a-webapp/frontend-configmap.yaml
 kubectl apply -f application/team-a-webapp/frontend.yaml
 kubectl apply -f application/team-a-webapp/ingress.yaml
 ```
@@ -205,8 +209,12 @@ vault kv get secret/team-a/webapp/db
 vault kv patch secret/team-a/webapp/db password="NewP@ssw0rd"
 ```
 
-After updating a secret, the Vault Agent sidecar automatically re-renders
-`/vault/secrets/db.env` in the backend pod within the next lease cycle (~1 min).
+After updating a secret, the Vault Agent sidecar detects the change via a
+blocking query and immediately re-renders `/vault/secrets/db.env`. It then
+sends `SIGHUP` to the backend process (`kill -HUP 1`) via the
+`agent-inject-command` annotation. The backend's SIGHUP handler logs the
+refresh and the next API request reads the updated credentials — **no pod
+restart required**.
 
 ---
 
@@ -241,7 +249,9 @@ expires automatically and is never stored long-term.
 ```bash
 kubectl delete -f application/team-a-webapp/ingress.yaml
 kubectl delete -f application/team-a-webapp/frontend.yaml
+kubectl delete -f application/team-a-webapp/frontend-configmap.yaml
 kubectl delete -f application/team-a-webapp/backend.yaml
+kubectl delete -f application/team-a-webapp/backend-configmap.yaml
 kubectl delete -f application/team-a-webapp/postgres.yaml
 kubectl delete -f application/team-a-webapp/serviceaccount.yaml
 kubectl delete -f application/team-a-webapp/vault-rbac.yaml

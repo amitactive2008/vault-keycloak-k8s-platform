@@ -26,6 +26,14 @@ spec:
         #      (Kubernetes auth method, role: team-a-webapp)
         #   2. Renders the template below into /vault/secrets/db.env
         #   3. Keeps the sidecar running to renew tokens and re-render on rotation
+        #
+        # Hot-reload flow (no pod restart needed):
+        #   Vault secret changes
+        #     → Vault Agent detects change via blocking query
+        #     → re-renders /vault/secrets/db.env
+        #     → runs agent-inject-command (kill -HUP 1)
+        #     → backend SIGHUP handler logs the refresh
+        #     → next API request reads fresh credentials from the updated file
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "team-a-webapp"
         vault.hashicorp.com/agent-inject-secret-db.env: "secret/data/team-a/webapp/db"
@@ -37,6 +45,10 @@ spec:
           export DB_PASSWORD={{ .Data.data.password }}
           export DB_NAME={{ .Data.data.database }}
           {{- end -}}
+        # After each re-render Vault Agent sends SIGHUP to PID 1 (the backend).
+        # In real apps with a connection pool, the SIGHUP handler should
+        # reconnect using the new credentials.
+        vault.hashicorp.com/agent-inject-command-db.env: "kill -HUP 1"
     spec:
       serviceAccountName: webapp-backend
       containers:

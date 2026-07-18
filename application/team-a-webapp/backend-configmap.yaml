@@ -16,10 +16,23 @@ data:
     """
     import json
     import os
+    import signal
     import socket
     from http.server import HTTPServer, BaseHTTPRequestHandler
 
     VAULT_SECRET_FILE = "/vault/secrets/db.env"
+
+    def _handle_sighup(signum, frame):
+        """Vault Agent sends SIGHUP after re-rendering the secret file.
+
+        For this demo server, load_db_creds() already reads the file fresh on
+        every request so no extra work is needed here. In a real app that holds
+        a connection pool, close and recreate the pool inside this handler.
+        """
+        print("SIGHUP received — Vault Agent refreshed /vault/secrets/db.env",
+              flush=True)
+
+    signal.signal(signal.SIGHUP, _handle_sighup)
 
     def load_db_creds():
         """Parse the shell-export style file written by Vault Agent."""
