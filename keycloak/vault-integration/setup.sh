@@ -30,7 +30,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEPLOY_DIR="${SCRIPT_DIR}/../../deploy"
+DEPLOY_DIR="${SCRIPT_DIR}/../../vault"
 
 # ── Configuration ──────────────────────────────────────────────
 ROOT_TOKEN=$(python3 -c "

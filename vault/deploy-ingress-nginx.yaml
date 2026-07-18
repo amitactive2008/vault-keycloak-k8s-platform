@@ -327,6 +327,9 @@ apiVersion: v1
 #       in trusted clusters where ingress objects are controlled by platform admins.
 data:
   allow-snippet-annotations: "true"
+  # Limit nginx to 1 worker process to avoid pthread_create() EAGAIN failures
+  # when running under Podman's default pids-limit on kind clusters.
+  worker-processes: "1"
 kind: ConfigMap
 metadata:
   labels:

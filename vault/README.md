@@ -111,7 +111,83 @@ echo "127.0.0.1 vault-webui.local" | sudo tee -a /etc/hosts
 
 ---
 
-## Step 4 — Initialize Vault
+## Step 4 — Create the HTTPS TLS secret
+
+The Vault ingress references a TLS secret named `vault-webui-local-tls` in the
+`vault` namespace. **Without it `https://vault-webui.local` will not work** —
+ingress-nginx falls back to its default self-signed cert and browsers show an
+untrusted-certificate error.
+
+### Option A — Shared CA (recommended if `keycloak/k8s-oidc/setup.sh` has already been run)
+
+The keycloak setup writes a CA key to `/private/tmp/keycloak-local-ca.key`.
+Reusing the same CA means you only need to trust one root certificate in your
+browser/OS (covers both `vault-webui.local` and `keycloak.local`).
+
+```bash
+# Generate server key + cert for vault-webui.local signed by the shared CA
+openssl genrsa -out /tmp/vault-webui-local.key 4096 2>/dev/null
+
+openssl req -new -key /tmp/vault-webui-local.key \
+  -out /tmp/vault-webui-local.csr \
+  -subj "/C=US/O=kind-vault/CN=vault-webui.local"
+
+openssl x509 -req \
+  -in /tmp/vault-webui-local.csr \
+  -CA /private/tmp/keycloak-local-ca.crt \
+  -CAkey /private/tmp/keycloak-local-ca.key \
+  -CAcreateserial \
+  -out /tmp/vault-webui-local.crt \
+  -days 3650 -sha256 \
+  -extfile <(printf "subjectAltName=DNS:vault-webui.local\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth")
+
+kubectl create secret tls vault-webui-local-tls \
+  --cert=/tmp/vault-webui-local.crt \
+  --key=/tmp/vault-webui-local.key \
+  -n vault
+```
+
+Trust the shared CA (one-time, covers both Vault and Keycloak):
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain \
+  ../keycloak/k8s-oidc/keycloak-local-ca.crt
+```
+
+### Option B — Standalone self-signed cert (Keycloak not yet set up)
+
+```bash
+openssl req -x509 -newkey rsa:4096 -nodes \
+  -keyout /tmp/vault-webui-local.key \
+  -out /tmp/vault-webui-local.crt \
+  -days 3650 -sha256 \
+  -subj "/C=US/O=kind-vault/CN=vault-webui.local" \
+  -addext "subjectAltName=DNS:vault-webui.local"
+
+kubectl create secret tls vault-webui-local-tls \
+  --cert=/tmp/vault-webui-local.crt \
+  --key=/tmp/vault-webui-local.key \
+  -n vault
+```
+
+Trust the standalone cert directly (macOS):
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain \
+  /tmp/vault-webui-local.crt
+```
+
+Verify the secret exists:
+
+```bash
+kubectl get secret vault-webui-local-tls -n vault
+```
+
+---
+
+## Step 5 — Initialize Vault
 
 Run this **once** on a fresh cluster. It outputs 5 unseal keys and a root token.
 
@@ -131,7 +207,7 @@ echo "cluster-keys.json" >> .gitignore
 
 ---
 
-## Step 5 — Unseal all pods
+## Step 6 — Unseal all pods
 
 Vault requires **3 of the 5 keys** to unseal. Each pod must be unsealed
 independently after every restart.
@@ -166,7 +242,7 @@ Expected: `Sealed: false` on all three pods, one `active` and two `standby`.
 
 ---
 
-## Step 6 — Access the UI
+## Step 7 — Access the UI
 
 Vault is accessible over both HTTP and HTTPS:
 
