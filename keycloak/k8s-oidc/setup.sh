@@ -500,6 +500,7 @@ users:
         - get-token
         - --oidc-issuer-url=https://keycloak.local/realms/kind
         - --oidc-client-id=kubernetes
+        - --oidc-auth-request-extra-params=prompt=login
         - --certificate-authority=${SCRIPT_DIR}/keycloak-local-ca.crt
 - name: team-a-oidc
   user:
@@ -514,6 +515,7 @@ users:
         - get-token
         - --oidc-issuer-url=https://keycloak.local/realms/kind
         - --oidc-client-id=kubernetes
+        - --oidc-auth-request-extra-params=prompt=login
         - --certificate-authority=${SCRIPT_DIR}/keycloak-local-ca.crt
 - name: team-b-oidc
   user:
@@ -528,6 +530,7 @@ users:
         - get-token
         - --oidc-issuer-url=https://keycloak.local/realms/kind
         - --oidc-client-id=kubernetes
+        - --oidc-auth-request-extra-params=prompt=login
         - --certificate-authority=${SCRIPT_DIR}/keycloak-local-ca.crt
 KCEOF
 

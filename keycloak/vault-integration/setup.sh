@@ -263,25 +263,42 @@ done
 # ── Step 5: OIDC auth method ────────────────────────────────────
 section "Step 5 — Enabling and configuring OIDC auth method"
 
+# Build the OIDC config as a JSON file locally so the multiline CA cert PEM is
+# correctly JSON-encoded (inline shell expansion breaks on cert newlines).
+OIDC_CONFIG_JSON=$(mktemp /tmp/vault-oidc-config.XXXXXX.json)
+python3 - << PYEOF
+import json
+ca = open("${OIDC_CA_CERT_FILE}").read() if __import__('os').path.exists("${OIDC_CA_CERT_FILE}") else ""
+cfg = {
+    "oidc_discovery_url":    "${KC_EXTERNAL_URL}/realms/${KC_REALM}",
+    "oidc_discovery_ca_pem": ca,
+    "oidc_client_id":        "${OIDC_CLIENT_ID}",
+    "oidc_client_secret":    "${OIDC_CLIENT_SECRET}",
+    "default_role":          "default"
+}
+with open("${OIDC_CONFIG_JSON}", "w") as f:
+    json.dump(cfg, f)
+PYEOF
+info "OIDC config JSON built (CA cert lines: $(python3 -c "import json; d=json.load(open('${OIDC_CONFIG_JSON}')); print(d['oidc_discovery_ca_pem'].count(chr(10)))"))"
+
 kubectl exec -n "$VAULT_NS" vault-0 -- sh -c "
   export VAULT_ADDR=${VAULT_ACTIVE_ADDR}
   export VAULT_TOKEN=${ROOT_TOKEN}
-
   vault auth enable oidc 2>/dev/null \
     && echo 'OIDC auth method enabled' \
     || echo 'OIDC auth method already enabled'
-
-  # Point Vault at Keycloak's kind realm
-  # keycloak.local resolves inside the cluster after the CoreDNS patch (Step 1)
-  vault write auth/oidc/config \
-    oidc_discovery_url='${KC_EXTERNAL_URL}/realms/${KC_REALM}' \
-    oidc_discovery_ca_pem='$(cat ${OIDC_CA_CERT_FILE} 2>/dev/null || echo "")' \
-    oidc_client_id='${OIDC_CLIENT_ID}' \
-    oidc_client_secret='${OIDC_CLIENT_SECRET}' \
-    default_role='default'
-
-  echo 'OIDC auth configured → ${KC_EXTERNAL_URL}/realms/${KC_REALM}'
 "
+
+# Copy the JSON config into the pod and apply it with @file (safe multiline handling)
+kubectl cp "${OIDC_CONFIG_JSON}" "${VAULT_NS}/vault-0:/tmp/vault-oidc-config.json"
+kubectl exec -n "$VAULT_NS" vault-0 -- sh -c "
+  export VAULT_ADDR=${VAULT_ACTIVE_ADDR}
+  export VAULT_TOKEN=${ROOT_TOKEN}
+  vault write auth/oidc/config @/tmp/vault-oidc-config.json
+  rm /tmp/vault-oidc-config.json
+"
+rm -f "${OIDC_CONFIG_JSON}"
+info "OIDC auth configured → ${KC_EXTERNAL_URL}/realms/${KC_REALM}"
 
 # ── Step 6: OIDC role ───────────────────────────────────────────
 section "Step 6 — Creating OIDC role 'default'"
