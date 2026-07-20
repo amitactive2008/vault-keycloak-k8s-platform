@@ -3,9 +3,9 @@
 # setup.sh — Kubernetes API server OIDC → Keycloak kind realm
 #
 # What this does:
-#   1. Adds keycloak.local to the control-plane /etc/hosts pointing
+#   1. Adds keycloak.kind.local to the control-plane /etc/hosts pointing
 #      at the nginx ingress ClusterIP (handles both port 80 + 443).
-#   2. Generates a self-signed CA + TLS cert for keycloak.local and
+#   2. Generates a self-signed CA + TLS cert for keycloak.kind.local and
 #      adds HTTPS to the Keycloak nginx ingress.
 #      Kubernetes 1.30+ requires https:// for --oidc-issuer-url.
 #   3. Creates a public OIDC client "kubernetes" in the Keycloak
@@ -25,7 +25,7 @@
 # kubectl login (requires kubelogin plugin):
 #   brew install int128/kubelogin/kubelogin
 #   kubectl oidc-login get-token \
-#     --oidc-issuer-url=https://keycloak.local/realms/kind \
+#     --oidc-issuer-url=https://keycloak.kind.local/realms/kind \
 #     --oidc-client-id=kubernetes \
 #     --certificate-authority=keycloak/k8s-oidc/keycloak-local-ca.crt
 #
@@ -46,18 +46,22 @@ KC_CLUSTER_IP=$(kubectl get svc keycloak -n "$KC_NS" -o jsonpath='{.spec.cluster
 NGINX_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.clusterIP}')
 KIND_CONTROL_PLANE="vault-control-plane"
 OIDC_CLIENT_ID="kubernetes"
-# Kubernetes 1.30+ requires https:// — nginx TLS-terminates keycloak.local
-OIDC_ISSUER="https://keycloak.local/realms/${KC_REALM}"
-# Shared local CA created during Vault setup (02-vault/README.md Step 4).
-# The same CA signs both vault-webui.local and keycloak.local so only
-# one root certificate needs to be trusted in the browser/OS.
-TLS_DIR="/private/tmp"
-CA_CERT="${TLS_DIR}/local-ca.crt"
-CA_KEY="${TLS_DIR}/local-ca.key"
-TLS_CERT="${TLS_DIR}/keycloak-local-tls.crt"
-TLS_KEY="${TLS_DIR}/keycloak-local-tls.key"
+# Kubernetes 1.30+ requires https:// — nginx TLS-terminates keycloak.kind.local
+OIDC_ISSUER="https://keycloak.kind.local/realms/${KC_REALM}"
+# Shared local CA at the project root (created in 02-vault README Step 4a)
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CA_CERT="${PROJECT_ROOT}/pki/kind.localCA.crt"
+CA_KEY="${PROJECT_ROOT}/pki/kind.localCA.key"
+# Use the already-signed keycloak cert from pki/ if it exists; else generate to /private/tmp
+if [ -f "${PROJECT_ROOT}/pki/keycloak.kind.local.crt" ]; then
+  TLS_CERT="${PROJECT_ROOT}/pki/keycloak.kind.local.crt"
+  TLS_KEY="${PROJECT_ROOT}/pki/keycloak.kind.local.key"
+else
+  TLS_CERT="/private/tmp/keycloak.kind.local.crt"
+  TLS_KEY="/private/tmp/keycloak.kind.local.key"
+fi
 # Path inside the control-plane container (mounted into kube-apiserver pod)
-APISERVER_CA_FILE="/etc/kubernetes/pki/local-ca.crt"
+APISERVER_CA_FILE="/etc/kubernetes/pki/kind.localCA.crt"
 
 # ── Helpers ───────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
@@ -78,25 +82,24 @@ info "Keycloak : $KC_CLUSTER_IP  (Keycloak ClusterIP — HTTP only)"
 info "Nginx    : $NGINX_IP  (handles port 80 + 443 via ingress)"
 info "OIDC     : $OIDC_ISSUER"
 
-# ── Step 1: TLS certificate for keycloak.local ───────────────
+# ── Step 1: TLS certificate for keycloak.kind.local ───────────────
 # Kubernetes 1.30+ rejects http:// for --oidc-issuer-url.
 # Solution: add TLS to the Keycloak nginx ingress.
 #   - nginx ClusterIP handles HTTPS (port 443) → TLS termination → Keycloak HTTP
-#   - kube-apiserver /etc/hosts points keycloak.local → nginx ClusterIP
+#   - kube-apiserver /etc/hosts points keycloak.kind.local → nginx ClusterIP
 #   - --oidc-ca-file provides our self-signed CA for verification
 #   - Vault pods still reach Keycloak via CoreDNS → Keycloak ClusterIP (HTTP)
 #     so the existing Vault OIDC integration is NOT affected
-section "Step 1 — Signing TLS cert for keycloak.local with the shared local CA"
+section "Step 1 — Signing TLS cert for keycloak.kind.local with the shared local CA"
 
 # Require the shared CA created in 02-vault/README.md Step 4.
 # If it does not exist, abort with clear instructions.
 if [ ! -f "${CA_CERT}" ] || [ ! -f "${CA_KEY}" ]; then
   error "Shared CA not found at ${CA_CERT} / ${CA_KEY}"
-  error "Run Step 4 of 02-vault/README.md first to create the shared local CA:"
-  error "  openssl genrsa -out /private/tmp/local-ca.key 4096"
-  error "  openssl req -x509 -new -nodes -key /private/tmp/local-ca.key \\"
-  error "    -sha256 -days 3650 -out /private/tmp/local-ca.crt \\"
-  error "    -subj '/C=US/O=kind-vault/CN=kind-vault-local-ca'"
+  error "Run Step 4a of 02-vault/README.md first to create the shared local CA:"
+  error "  mkdir -p pki && openssl genrsa -out pki/kind.localCA.key 4096"
+  error "  openssl req -x509 -new -nodes -key pki/kind.localCA.key \\"
+  error "    -sha256 -days 3650 -out pki/kind.localCA.crt -config pki/ca.ini"
   exit 1
 fi
 info "Shared CA found: ${CA_CERT} ✓"
@@ -104,20 +107,20 @@ info "Shared CA found: ${CA_CERT} ✓"
 if [ -f "${TLS_CERT}" ]; then
   warn "TLS cert already exists at ${TLS_CERT} — skipping generation"
 else
-  info "Generating server key + CSR for keycloak.local..."
+  info "Generating server key + CSR for keycloak.kind.local..."
   openssl genrsa -out "${TLS_KEY}" 4096 2>/dev/null
   openssl req -new -key "${TLS_KEY}" \
-    -out "${TLS_DIR}/keycloak-local-tls.csr" \
-    -subj "/C=US/O=kind-vault/CN=keycloak.local"
+    -out "/private/tmp/keycloak.kind.local.csr" \
+    -subj "/C=US/O=kind-vault/CN=keycloak.kind.local"
 
-  info "Signing keycloak.local CSR with shared CA..."
-  openssl x509 -req -in "${TLS_DIR}/keycloak-local-tls.csr" \
+  info "Signing keycloak.kind.local CSR with shared CA..."
+  openssl x509 -req -in "/private/tmp/keycloak.kind.local.csr" \
     -CA "${CA_CERT}" -CAkey "${CA_KEY}" -CAcreateserial \
     -out "${TLS_CERT}" -days 3650 -sha256 \
-    -extfile <(printf "subjectAltName=DNS:keycloak.local\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth")
+    -extfile <(printf "subjectAltName=DNS:keycloak.kind.local\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth")
 
   openssl verify -CAfile "${CA_CERT}" "${TLS_CERT}" \
-    && info "keycloak.local cert verified ✓" \
+    && info "keycloak.kind.local cert verified ✓" \
     || { error "Cert verification failed"; exit 1; }
 fi
 
@@ -134,7 +137,7 @@ TLS_ALREADY=$(kubectl get ingress keycloak -n "$KC_NS" \
 if [ -z "$TLS_ALREADY" ] || [ "$TLS_ALREADY" = "null" ]; then
   kubectl patch ingress keycloak -n "$KC_NS" \
     --type merge \
-    -p '{"spec":{"tls":[{"hosts":["keycloak.local"],"secretName":"keycloak-local-tls"}]}}'
+    -p '{"spec":{"tls":[{"hosts":["keycloak.kind.local"],"secretName":"keycloak-local-tls"}]}}'
   info "Keycloak ingress TLS patched ✓"
 else
   warn "Keycloak ingress TLS already configured — skipping"
@@ -151,16 +154,16 @@ info "CA cert copied to control-plane PKI dir ✓"
 cp "${CA_CERT}" "${SCRIPT_DIR}/keycloak-local-ca.crt"
 info "CA cert saved to ${SCRIPT_DIR}/keycloak-local-ca.crt ✓"
 
-# ── Step 2: keycloak.local → control-plane /etc/hosts ────────
-# Point keycloak.local at the nginx ingress ClusterIP (not the Keycloak
+# ── Step 2: keycloak.kind.local → control-plane /etc/hosts ────────
+# Point keycloak.kind.local at the nginx ingress ClusterIP (not the Keycloak
 # ClusterIP) so HTTPS (port 443) is handled by nginx.
-section "Step 2 — Pointing keycloak.local → nginx ingress on control-plane"
+section "Step 2 — Pointing keycloak.kind.local → nginx ingress on control-plane"
 
 CURRENT_ENTRY=$(podman exec "$KIND_CONTROL_PLANE" \
-  grep "keycloak.local" /etc/hosts 2>/dev/null || echo "")
+  grep "keycloak.kind.local" /etc/hosts 2>/dev/null || echo "")
 
 if echo "$CURRENT_ENTRY" | grep -q "^${NGINX_IP}"; then
-  warn "keycloak.local already → ${NGINX_IP} in control-plane /etc/hosts — skipping"
+  warn "keycloak.kind.local already → ${NGINX_IP} in control-plane /etc/hosts — skipping"
 else
   # Use Python to edit in-place (sed -i fails on bind-mounted /etc/hosts)
   podman exec "$KIND_CONTROL_PLANE" python3 -c "
@@ -168,17 +171,17 @@ import re
 with open('/etc/hosts', 'r') as f:
     content = f.read()
 content = re.sub(r'.*keycloak\.local.*\n?', '', content)
-content += '${NGINX_IP} keycloak.local\n'
+content += '${NGINX_IP} keycloak.kind.local\n'
 with open('/etc/hosts', 'w') as f:
     f.write(content)
 "
-  info "Set: ${NGINX_IP} keycloak.local"
+  info "Set: ${NGINX_IP} keycloak.kind.local"
 fi
 
 RESOLVED=$(podman exec "$KIND_CONTROL_PLANE" \
-  sh -c "getent hosts keycloak.local 2>/dev/null || echo FAILED")
+  sh -c "getent hosts keycloak.kind.local 2>/dev/null || echo FAILED")
 if echo "$RESOLVED" | grep -q "$NGINX_IP"; then
-  info "DNS check: keycloak.local → $NGINX_IP ✓"
+  info "DNS check: keycloak.kind.local → $NGINX_IP ✓"
 else
   warn "DNS check inconclusive ($RESOLVED) — proceeding"
 fi
@@ -186,7 +189,7 @@ fi
 # Verify OIDC discovery endpoint returns https:// issuer
 ISSUER_FROM_DISCO=$(podman exec "$KIND_CONTROL_PLANE" sh -c \
   "curl -sf --cacert ${APISERVER_CA_FILE} --max-time 10 \
-  https://keycloak.local/realms/${KC_REALM}/.well-known/openid-configuration \
+  https://keycloak.kind.local/realms/${KC_REALM}/.well-known/openid-configuration \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"issuer\"])'" \
   2>/dev/null || echo "FAILED")
 if [ "$ISSUER_FROM_DISCO" = "$OIDC_ISSUER" ]; then
@@ -333,7 +336,7 @@ if '--oidc-issuer-url' in content:
     exit(0)
 
 oidc_flags = [
-    '    - --oidc-issuer-url=https://keycloak.local/realms/kind',
+    '    - --oidc-issuer-url=https://keycloak.kind.local/realms/kind',
     '    - --oidc-client-id=kubernetes',
     '    - --oidc-username-claim=preferred_username',
     '    - --oidc-groups-claim=groups',
@@ -435,7 +438,7 @@ cat << 'EOF'
 ║     brew install int128/kubelogin/kubelogin                     ║
 ║                                                                 ║
 ║  2. Add to /etc/hosts (if not already):                         ║
-║     sudo sh -c 'echo "127.0.0.1  keycloak.local" >> /etc/hosts' ║
+║     sudo sh -c 'echo "127.0.0.1  keycloak.kind.local" >> /etc/hosts' ║
 ║                                                                 ║
 ║  3. Trust the self-signed CA cert (browser + kubelogin):        ║
 ║     # macOS: add to system keychain                             ║
@@ -444,7 +447,7 @@ cat << 'EOF'
 ║       keycloak/k8s-oidc/keycloak-local-ca.crt                  ║
 ║                                                                 ║
 ║  4. Use kubeconfig-oidc.yaml:                                   ║
-║     export KUBECONFIG=~/.kube/config:keycloak/k8s-oidc/kubeconfig-oidc.yaml ║
+║     export KUBECONFIG=~/.kube/config:05-k8s-oidc-with-keycloak/kubeconfig-oidc.yaml ║
 ║     kubectl config use-context team-a                          ║
 ║     kubectl get pods -n team-a        # ✓ allowed               ║
 ║     kubectl get pods -n team-b        # ✗ forbidden             ║
@@ -469,7 +472,7 @@ cat > "${SCRIPT_DIR}/kubeconfig-oidc.yaml" << KCEOF
 #   export KUBECONFIG=~/.kube/config:${SCRIPT_DIR}/kubeconfig-oidc.yaml
 #   kubectl config use-context team-a
 #
-# First run: browser opens to https://keycloak.local — login with
+# First run: browser opens to https://keycloak.kind.local — login with
 #   team-a-user-1 / password   (or devops-user-1 for cluster-admin)
 #
 # TLS: kubelogin verifies the cert using keycloak-local-ca.crt.
@@ -513,7 +516,7 @@ users:
       args:
         - oidc-login
         - get-token
-        - --oidc-issuer-url=https://keycloak.local/realms/kind
+        - --oidc-issuer-url=https://keycloak.kind.local/realms/kind
         - --oidc-client-id=kubernetes
         - --oidc-auth-request-extra-params=prompt=login
         - --certificate-authority=${SCRIPT_DIR}/keycloak-local-ca.crt
@@ -528,7 +531,7 @@ users:
       args:
         - oidc-login
         - get-token
-        - --oidc-issuer-url=https://keycloak.local/realms/kind
+        - --oidc-issuer-url=https://keycloak.kind.local/realms/kind
         - --oidc-client-id=kubernetes
         - --oidc-auth-request-extra-params=prompt=login
         - --certificate-authority=${SCRIPT_DIR}/keycloak-local-ca.crt
@@ -543,7 +546,7 @@ users:
       args:
         - oidc-login
         - get-token
-        - --oidc-issuer-url=https://keycloak.local/realms/kind
+        - --oidc-issuer-url=https://keycloak.kind.local/realms/kind
         - --oidc-client-id=kubernetes
         - --oidc-auth-request-extra-params=prompt=login
         - --certificate-authority=${SCRIPT_DIR}/keycloak-local-ca.crt

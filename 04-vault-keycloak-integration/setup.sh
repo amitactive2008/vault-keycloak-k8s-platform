@@ -30,7 +30,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEPLOY_DIR="${SCRIPT_DIR}/../../vault"
+DEPLOY_DIR="${SCRIPT_DIR}/../02-vault"
 
 # ── Configuration ──────────────────────────────────────────────
 ROOT_TOKEN=$(python3 -c "
@@ -46,9 +46,18 @@ KC_EXTERNAL_URL="https://keycloak.kind.local"
 VAULT_EXTERNAL_URL="https://vault.kind.local"
 OIDC_CLIENT_ID="vault"
 OIDC_CLIENT_SECRET="Vault@Keycloak2024!"
-# CA cert for Keycloak's TLS — shared local CA created in 02-vault/README.md Step 4
-# and copied to keycloak/k8s-oidc/ by keycloak/k8s-oidc/setup.sh Step 1.
-OIDC_CA_CERT_FILE="${SCRIPT_DIR}/../k8s-oidc/keycloak-local-ca.crt"
+# CA cert for Keycloak's TLS — shared local CA from pki/kind.localCA.crt (project root).
+# Fall back to 05-k8s-oidc-with-keycloak/ if the pki/ copy isn't available.
+_PKI_CA="${SCRIPT_DIR}/../pki/kind.localCA.crt"
+_OIDC_CA="${SCRIPT_DIR}/../05-k8s-oidc-with-keycloak/keycloak-local-ca.crt"
+if [ -f "$_PKI_CA" ]; then
+  OIDC_CA_CERT_FILE="$_PKI_CA"
+elif [ -f "$_OIDC_CA" ]; then
+  OIDC_CA_CERT_FILE="$_OIDC_CA"
+else
+  echo "[WARN] CA cert not found at $_PKI_CA or $_OIDC_CA — OIDC TLS verification will be skipped"
+  OIDC_CA_CERT_FILE=""
+fi
 # vault-active service — always points to the active Vault node
 VAULT_ACTIVE_ADDR="http://vault-active.vault.svc.cluster.local:8200"
 
