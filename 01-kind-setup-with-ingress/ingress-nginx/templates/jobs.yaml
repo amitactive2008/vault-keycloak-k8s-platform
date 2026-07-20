@@ -1,0 +1,97 @@
+{{- if .Values.admissionWebhooks.enabled }}
+# ── Job: create the TLS secret for the admission webhook ─────
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ingress-nginx-admission-create
+  namespace: {{ include "ingress-nginx.namespace" . }}
+  labels:
+    {{- include "ingress-nginx.admission.labels" . | nindent 4 }}
+spec:
+  template:
+    metadata:
+      name: ingress-nginx-admission-create
+      labels:
+        {{- include "ingress-nginx.admission.labels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: true
+      containers:
+      - name: create
+        image: {{ include "ingress-nginx.webhook.image" . }}
+        imagePullPolicy: {{ .Values.admissionWebhooks.image.pullPolicy }}
+        args:
+        - create
+        - --host=ingress-nginx-controller-admission,ingress-nginx-controller-admission.$(POD_NAMESPACE).svc
+        - --namespace=$(POD_NAMESPACE)
+        - --secret-name=ingress-nginx-admission
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65532
+          runAsNonRoot: true
+          runAsUser: 65532
+          seccompProfile:
+            type: RuntimeDefault
+      nodeSelector:
+        kubernetes.io/os: linux
+      restartPolicy: OnFailure
+      serviceAccountName: ingress-nginx-admission
+  ttlSecondsAfterFinished: 0
+---
+# ── Job: patch the ValidatingWebhookConfiguration with the CA ─
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ingress-nginx-admission-patch
+  namespace: {{ include "ingress-nginx.namespace" . }}
+  labels:
+    {{- include "ingress-nginx.admission.labels" . | nindent 4 }}
+spec:
+  template:
+    metadata:
+      name: ingress-nginx-admission-patch
+      labels:
+        {{- include "ingress-nginx.admission.labels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: true
+      containers:
+      - name: patch
+        image: {{ include "ingress-nginx.webhook.image" . }}
+        imagePullPolicy: {{ .Values.admissionWebhooks.image.pullPolicy }}
+        args:
+        - patch
+        - --webhook-name=ingress-nginx-admission
+        - --namespace=$(POD_NAMESPACE)
+        - --patch-mutating=false
+        - --secret-name=ingress-nginx-admission
+        - --patch-failure-policy={{ .Values.admissionWebhooks.failurePolicy }}
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65532
+          runAsNonRoot: true
+          runAsUser: 65532
+          seccompProfile:
+            type: RuntimeDefault
+      nodeSelector:
+        kubernetes.io/os: linux
+      restartPolicy: OnFailure
+      serviceAccountName: ingress-nginx-admission
+  ttlSecondsAfterFinished: 0
+{{- end }}

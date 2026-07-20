@@ -48,17 +48,16 @@ KIND_CONTROL_PLANE="vault-control-plane"
 OIDC_CLIENT_ID="kubernetes"
 # Kubernetes 1.30+ requires https:// — nginx TLS-terminates keycloak.local
 OIDC_ISSUER="https://keycloak.local/realms/${KC_REALM}"
-# Shared local CA created in 02-vault/README.md Step 4a.
-# Lives in the pki/ directory at the project root (two levels up from this script).
-# The same CA signs vault.kind.local and keycloak.local — only one browser trust needed.
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# Shared local CA created during Vault setup (02-vault/README.md Step 4).
+# The same CA signs both vault-webui.local and keycloak.local so only
+# one root certificate needs to be trusted in the browser/OS.
 TLS_DIR="/private/tmp"
-CA_CERT="${PROJECT_ROOT}/pki/kind.localCA.crt"
-CA_KEY="${PROJECT_ROOT}/pki/kind.localCA.key"
+CA_CERT="${TLS_DIR}/local-ca.crt"
+CA_KEY="${TLS_DIR}/local-ca.key"
 TLS_CERT="${TLS_DIR}/keycloak-local-tls.crt"
 TLS_KEY="${TLS_DIR}/keycloak-local-tls.key"
 # Path inside the control-plane container (mounted into kube-apiserver pod)
-APISERVER_CA_FILE="/etc/kubernetes/pki/kind.localCA.crt"
+APISERVER_CA_FILE="/etc/kubernetes/pki/local-ca.crt"
 
 # ── Helpers ───────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
@@ -92,13 +91,12 @@ section "Step 1 — Signing TLS cert for keycloak.local with the shared local CA
 # Require the shared CA created in 02-vault/README.md Step 4.
 # If it does not exist, abort with clear instructions.
 if [ ! -f "${CA_CERT}" ] || [ ! -f "${CA_KEY}" ]; then
-  error "Shared CA not found at:"
-  error "  cert : ${CA_CERT}"
-  error "  key  : ${CA_KEY}"
-  error "Run Step 4a of 02-vault/README.md from the project root first:"
-  error "  mkdir -p pki && openssl genrsa -out pki/kind.localCA.key 4096"
-  error "  openssl req -x509 -new -nodes -key pki/kind.localCA.key \\"
-  error "    -sha256 -days 3650 -out pki/kind.localCA.crt -config pki/ca.ini"
+  error "Shared CA not found at ${CA_CERT} / ${CA_KEY}"
+  error "Run Step 4 of 02-vault/README.md first to create the shared local CA:"
+  error "  openssl genrsa -out /private/tmp/local-ca.key 4096"
+  error "  openssl req -x509 -new -nodes -key /private/tmp/local-ca.key \\"
+  error "    -sha256 -days 3650 -out /private/tmp/local-ca.crt \\"
+  error "    -subj '/C=US/O=kind-vault/CN=kind-vault-local-ca'"
   exit 1
 fi
 info "Shared CA found: ${CA_CERT} ✓"
@@ -152,7 +150,6 @@ info "CA cert copied to control-plane PKI dir ✓"
 # and oidc-login can reference it via a stable project-relative path.
 cp "${CA_CERT}" "${SCRIPT_DIR}/keycloak-local-ca.crt"
 info "CA cert saved to ${SCRIPT_DIR}/keycloak-local-ca.crt ✓"
-info "(source: ${CA_CERT})"
 
 # ── Step 2: keycloak.local → control-plane /etc/hosts ────────
 # Point keycloak.local at the nginx ingress ClusterIP (not the Keycloak

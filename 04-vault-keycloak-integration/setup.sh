@@ -3,7 +3,7 @@
 # setup.sh — Vault ↔ Keycloak OIDC integration
 #
 # What this does:
-#   1. Patches CoreDNS so Vault pods can resolve keycloak.local
+#   1. Patches CoreDNS so Vault pods can resolve keycloak.kind.local
 #      (Vault's token exchange call must reach Keycloak internally)
 #   2. Creates a confidential OIDC client "vault" in the kind realm
 #      with a groups claim mapper (full path: /devops, /team-a, /team-b)
@@ -42,12 +42,12 @@ VAULT_NS="vault"
 KC_NS="keycloak"
 KC_REALM="kind"
 KC_ADMIN_PASS="Admin@Keycloak2024!"
-KC_EXTERNAL_URL="https://keycloak.local"
-VAULT_EXTERNAL_URL="https://vault-webui.local"
+KC_EXTERNAL_URL="https://keycloak.kind.local"
+VAULT_EXTERNAL_URL="https://vault.kind.local"
 OIDC_CLIENT_ID="vault"
 OIDC_CLIENT_SECRET="Vault@Keycloak2024!"
-# CA cert for Keycloak's TLS — shared local CA from pki/kind.localCA.crt (project root),
-# copied to keycloak/k8s-oidc/keycloak-local-ca.crt by keycloak/k8s-oidc/setup.sh Step 1.
+# CA cert for Keycloak's TLS — shared local CA created in 02-vault/README.md Step 4
+# and copied to keycloak/k8s-oidc/ by keycloak/k8s-oidc/setup.sh Step 1.
 OIDC_CA_CERT_FILE="${SCRIPT_DIR}/../k8s-oidc/keycloak-local-ca.crt"
 # vault-active service — always points to the active Vault node
 VAULT_ACTIVE_ADDR="http://vault-active.vault.svc.cluster.local:8200"
@@ -70,24 +70,24 @@ info "Cluster : $(kubectl config current-context)"
 info "Vault NS: $VAULT_NS  |  Keycloak NS: $KC_NS"
 
 # ── Step 1: CoreDNS patch ───────────────────────────────────────
-# Vault pods are in-cluster and cannot resolve "keycloak.local" (host /etc/hosts
+# Vault pods are in-cluster and cannot resolve "keycloak.kind.local" (host /etc/hosts
 # is not visible inside pods). We inject a hosts entry into CoreDNS so that
-# http://keycloak.local resolves to Keycloak's ClusterIP from any pod.
-section "Step 1 — Patching CoreDNS to resolve keycloak.local inside the cluster"
+# https://keycloak.kind.local resolves to Keycloak's ClusterIP from any pod.
+section "Step 1 — Patching CoreDNS to resolve keycloak.kind.local inside the cluster"
 
-# Vault pods need to reach https://keycloak.local. CoreDNS must resolve
-# keycloak.local to the nginx ingress ClusterIP (not the Keycloak ClusterIP),
+# Vault pods need to reach https://keycloak.kind.local. CoreDNS must resolve
+# keycloak.kind.local to the nginx ingress ClusterIP (not the Keycloak ClusterIP),
 # because only nginx handles HTTPS (TLS termination on port 443).
 NGINX_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.clusterIP}')
-info "nginx ingress ClusterIP: $NGINX_IP  (handles HTTPS for keycloak.local)"
+info "nginx ingress ClusterIP: $NGINX_IP  (handles HTTPS for keycloak.kind.local)"
 
-# If keycloak.local is already in CoreDNS but points to the old Keycloak ClusterIP
+# If keycloak.kind.local is already in CoreDNS but points to the old Keycloak ClusterIP
 # (not nginx), update it so Vault pods reach the HTTPS-capable nginx ingress.
-CURRENT_CORE_ENTRY=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null | grep "keycloak.local" || true)
+CURRENT_CORE_ENTRY=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null | grep "keycloak.kind.local" || true)
 if echo "$CURRENT_CORE_ENTRY" | grep -q "$NGINX_IP"; then
-  warn "CoreDNS already has keycloak.local → $NGINX_IP — skipping patch"
+  warn "CoreDNS already has keycloak.kind.local → $NGINX_IP — skipping patch"
 else
-  info "Writing CoreDNS ConfigMap with keycloak.local → $NGINX_IP (nginx, HTTPS)..."
+  info "Writing CoreDNS ConfigMap with keycloak.kind.local → $NGINX_IP (nginx, HTTPS)..."
 
   # Write the full Corefile using kubectl apply (safe, no variable-in-heredoc issues).
   # This is the standard kind CoreDNS config with an added hosts block.
@@ -111,7 +111,7 @@ data:
            ttl 30
         }
         hosts {
-           ${NGINX_IP} keycloak.local
+           ${NGINX_IP} keycloak.kind.local
            fallthrough
         }
         prometheus :9153
@@ -132,11 +132,11 @@ YAML
   sleep 5
 fi
 
-# Quick smoke-test: can a vault pod resolve keycloak.local?
+# Quick smoke-test: can a vault pod resolve keycloak.kind.local?
 RESOLVE_RESULT=$(kubectl exec -n "$VAULT_NS" vault-0 -- \
-  sh -c "nslookup keycloak.local 2>&1 || getent hosts keycloak.local 2>&1 || echo UNRESOLVED")
+  sh -c "nslookup keycloak.kind.local 2>&1 || getent hosts keycloak.kind.local 2>&1 || echo UNRESOLVED")
 if echo "$RESOLVE_RESULT" | grep -qiE "$NGINX_IP|address"; then
-  info "DNS check passed — keycloak.local resolves from vault-0 ✓"
+  info "DNS check passed — keycloak.kind.local resolves from vault-0 ✓"
 else
   warn "DNS check inconclusive ($RESOLVE_RESULT). Proceeding anyway..."
 fi
@@ -191,8 +191,8 @@ info "Client UUID: $CLIENT_UUID"
 info "Syncing redirectUris and webOrigins on client 'vault'..."
 kubectl exec -n "$KC_NS" "$KC_POD" -- \
   /opt/keycloak/bin/kcadm.sh update "clients/${CLIENT_UUID}" -r "$KC_REALM" \
-  -s "redirectUris=[\"${VAULT_EXTERNAL_URL}/ui/vault/auth/oidc/oidc/callback\",\"http://vault-webui.local/ui/vault/auth/oidc/oidc/callback\",\"https://localhost:8250/oidc/callback\",\"http://localhost:8250/oidc/callback\"]" \
-  -s "webOrigins=[\"${VAULT_EXTERNAL_URL}\",\"http://vault-webui.local\"]"
+  -s "redirectUris=[\"${VAULT_EXTERNAL_URL}/ui/vault/auth/oidc/oidc/callback\",\"http://vault.kind.local/ui/vault/auth/oidc/oidc/callback\",\"https://localhost:8250/oidc/callback\",\"http://localhost:8250/oidc/callback\"]" \
+  -s "webOrigins=[\"${VAULT_EXTERNAL_URL}\",\"http://vault.kind.local\"]"
 info "redirectUris updated."
 
 # Add groups claim mapper (full path: /devops, /team-a, /team-b in the JWT)
@@ -318,7 +318,7 @@ kubectl exec -n "$VAULT_NS" vault-0 -- sh -c '
   "bound_audiences": ["'"${OIDC_CLIENT_ID}"'"],
   "allowed_redirect_uris": [
     "'"${VAULT_EXTERNAL_URL}"'/ui/vault/auth/oidc/oidc/callback",
-    "https://vault-webui.local/ui/vault/auth/oidc/oidc/callback",
+    "https://vault.kind.local/ui/vault/auth/oidc/oidc/callback",
     "http://localhost:8250/oidc/callback",
     "https://localhost:8250/oidc/callback"
   ],
@@ -403,7 +403,7 @@ echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║        Vault ↔ Keycloak OIDC Integration Summary            ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
-echo "║  Vault UI    : http://vault-webui.local                     ║"
+echo "║  Vault UI    : http://vault.kind.local                     ║"
 echo "║  Login method: OIDC  (select from dropdown)                 ║"
 echo "║  Role        : default                                      ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
@@ -425,5 +425,5 @@ echo "║   secret/devops/cluster                                     ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  CLI login:                                                 ║"
 echo "║   vault login -method=oidc \\                                ║"
-echo "║     -address=http://vault-webui.local role=default          ║"
+echo "║     -address=http://vault.kind.local role=default          ║"
 echo "╚══════════════════════════════════════════════════════════════╝"

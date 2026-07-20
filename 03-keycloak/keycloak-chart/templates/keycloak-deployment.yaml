@@ -1,0 +1,185 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: {{ include "keycloak.namespace" . }}
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.keycloak.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "keycloak.selectorLabels" . | nindent 6 }}
+  # Recreate is safer for single-replica Keycloak with a shared DB — avoids
+  # two pods writing to the same Infinispan cache or schema simultaneously.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "keycloak.labels" . | nindent 8 }}
+        {{- include "keycloak.selectorLabels" . | nindent 8 }}
+    spec:
+      # ── Wait for PostgreSQL before starting Keycloak ─────────
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ include "postgresql.image" . }}
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL to be ready..."
+              until pg_isready -h keycloak-postgresql -p 5432 \
+                    -U {{ .Values.postgresql.auth.username }}; do
+                echo "PostgreSQL not ready yet — sleeping 3s"
+                sleep 3
+              done
+              echo "PostgreSQL is ready."
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+
+      containers:
+        - name: keycloak
+          image: {{ include "keycloak.image" . }}
+          imagePullPolicy: {{ .Values.keycloak.image.pullPolicy }}
+
+          # production mode + import realm JSON on first boot
+          args:
+            - start
+            {{- if .Values.realm.importEnabled }}
+            - --import-realm
+            {{- end }}
+
+          env:
+            # ── Database ──────────────────────────────────────
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://keycloak-postgresql:5432/{{ .Values.postgresql.auth.database }}
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-postgresql-secret
+                  key: username
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-postgresql-secret
+                  key: password
+
+            # ── DB connection pool ─────────────────────────────
+            - name: KC_DB_POOL_INITIAL_SIZE
+              value: {{ .Values.keycloak.dbPool.initialSize | quote }}
+            - name: KC_DB_POOL_MIN_SIZE
+              value: {{ .Values.keycloak.dbPool.minSize | quote }}
+            - name: KC_DB_POOL_MAX_SIZE
+              value: {{ .Values.keycloak.dbPool.maxSize | quote }}
+
+            # ── HTTP / Proxy ───────────────────────────────────
+            - name: KC_HTTP_ENABLED
+              value: {{ .Values.keycloak.config.httpEnabled | quote }}
+            - name: KC_PROXY_HEADERS
+              value: {{ .Values.keycloak.config.proxyHeaders | quote }}
+            - name: KC_HOSTNAME_STRICT
+              value: {{ .Values.keycloak.config.hostnameStrict | quote }}
+
+            # ── Cache ─────────────────────────────────────────
+            - name: KC_CACHE
+              value: {{ .Values.keycloak.config.cache | quote }}
+
+            # ── Transactions ──────────────────────────────────
+            - name: KC_TRANSACTION_XA_ENABLED
+              value: {{ .Values.keycloak.config.transactionXaEnabled | quote }}
+
+            # ── Logging ───────────────────────────────────────
+            - name: KC_LOG_LEVEL
+              value: {{ .Values.keycloak.config.logLevel | quote }}
+
+            # ── Health / Metrics ──────────────────────────────
+            - name: KC_HEALTH_ENABLED
+              value: {{ .Values.keycloak.config.healthEnabled | quote }}
+            - name: KC_METRICS_ENABLED
+              value: {{ .Values.keycloak.config.metricsEnabled | quote }}
+
+            # ── Admin bootstrap credentials (Keycloak 26+) ────
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin-secret
+                  key: admin-user
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin-secret
+                  key: admin-password
+
+            # ── JVM tuning ────────────────────────────────────
+            - name: JAVA_OPTS_APPEND
+              value: {{ .Values.keycloak.jvmOpts | quote }}
+
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+
+          {{- if .Values.realm.importEnabled }}
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          {{- end }}
+
+          resources:
+            {{- toYaml .Values.keycloak.resources | nindent 12 }}
+
+          # Keycloak can take 90-120 s on first boot (DB schema creation + realm import)
+          startupProbe:
+            httpGet:
+              path: {{ .Values.keycloak.startupProbe.path }}
+              port: {{ .Values.keycloak.startupProbe.port }}
+            initialDelaySeconds: {{ .Values.keycloak.startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.keycloak.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.keycloak.startupProbe.failureThreshold }}
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.keycloak.livenessProbe.path }}
+              port: {{ .Values.keycloak.livenessProbe.port }}
+            periodSeconds: {{ .Values.keycloak.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.keycloak.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.keycloak.livenessProbe.failureThreshold }}
+
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.keycloak.readinessProbe.path }}
+              port: {{ .Values.keycloak.readinessProbe.port }}
+            periodSeconds: {{ .Values.keycloak.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.keycloak.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.keycloak.readinessProbe.failureThreshold }}
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+      {{- if .Values.realm.importEnabled }}
+      volumes:
+        - name: realm-import
+          configMap:
+            name: keycloak-realm-import
+      {{- end }}
+
+      securityContext:
+        fsGroup: 1000

@@ -1,0 +1,33 @@
+# ── Headless Service — StatefulSet DNS resolution ─────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-postgresql-headless
+  namespace: {{ include "keycloak.namespace" . }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "postgresql.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
+---
+# ── ClusterIP Service — used by Keycloak KC_DB_URL ─────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-postgresql
+  namespace: {{ include "keycloak.namespace" . }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "postgresql.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
