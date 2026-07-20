@@ -1,0 +1,14 @@
+apiVersion: v2
+name: team-a-webapp
+description: >
+  2-tier demo webapp (Python backend + nginx frontend + PostgreSQL) deployed in
+  the team-a namespace. Demonstrates Vault Agent sidecar secret injection and
+  the Vault Kubernetes secrets engine.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - vault
+  - keycloak
+  - team-a
+  - demo

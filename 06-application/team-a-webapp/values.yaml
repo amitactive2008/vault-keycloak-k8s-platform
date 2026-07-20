@@ -1,0 +1,42 @@
+# ============================================================
+# values.yaml — User-facing overrides for the team-a webapp chart.
+#
+# Install (run vault-setup.sh first):
+#   helm install team-a-webapp ./webapp-chart \
+#     -f ./values.yaml \
+#     --namespace team-a --create-namespace
+#
+# Upgrade:
+#   helm upgrade team-a-webapp ./webapp-chart \
+#     -f ./values.yaml --namespace team-a
+#
+# Uninstall:
+#   helm uninstall team-a-webapp --namespace team-a
+# ============================================================
+
+namespace: team-a
+
+backend:
+  image:
+    repository: python
+    tag: "3.11-slim"
+
+frontend:
+  image:
+    repository: nginx
+    tag: alpine
+
+postgresql:
+  auth:
+    username: webapp_user
+    password: "S3cur3P@ssw0rd"   # must match vault-setup.sh Step 1
+    database: webapp_db
+  storage:
+    size: 1Gi
+
+vault:
+  role: team-a-webapp
+  secretPath: secret/data/team-a/webapp/db
+
+ingress:
+  hostname: team-a-webapp.local

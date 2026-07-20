@@ -1,16 +1,15 @@
-# Frontend — nginx Deployment and Service
-# ConfigMap (nginx.conf + index.html) lives in frontend-configmap.yaml
-
 ---
+# ── Frontend Deployment ───────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: webapp-frontend
-  namespace: team-a
+  namespace: {{ include "webapp.namespace" . }}
   labels:
     app: webapp-frontend
+    {{- include "webapp.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.frontend.replicas }}
   selector:
     matchLabels:
       app: webapp-frontend
@@ -21,7 +20,8 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: nginx:alpine
+          image: {{ include "webapp.frontend.image" . }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
           ports:
             - name: http
               containerPort: 80
@@ -39,24 +39,21 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
           resources:
-            requests:
-              cpu: 20m
-              memory: 32Mi
-            limits:
-              cpu: 100m
-              memory: 64Mi
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
       volumes:
         - name: config
           configMap:
             name: frontend-config
 ---
+# ── Frontend Service ──────────────────────────────────────────
 apiVersion: v1
 kind: Service
 metadata:
   name: webapp-frontend
-  namespace: team-a
+  namespace: {{ include "webapp.namespace" . }}
   labels:
     app: webapp-frontend
+    {{- include "webapp.labels" . | nindent 4 }}
 spec:
   selector:
     app: webapp-frontend

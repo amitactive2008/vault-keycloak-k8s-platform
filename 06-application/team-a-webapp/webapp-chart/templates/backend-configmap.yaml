@@ -1,11 +1,11 @@
-# ConfigMap for the backend — Python server script (server.py)
-
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: backend-script
-  namespace: team-a
+  namespace: {{ include "webapp.namespace" . }}
+  labels:
+    app: webapp-backend
+    {{- include "webapp.labels" . | nindent 4 }}
 data:
   server.py: |
     #!/usr/bin/env python3
@@ -23,19 +23,12 @@ data:
     VAULT_SECRET_FILE = "/vault/secrets/db.env"
 
     def _handle_sighup(signum, frame):
-        """Vault Agent sends SIGHUP after re-rendering the secret file.
-
-        For this demo server, load_db_creds() already reads the file fresh on
-        every request so no extra work is needed here. In a real app that holds
-        a connection pool, close and recreate the pool inside this handler.
-        """
         print("SIGHUP received — Vault Agent refreshed /vault/secrets/db.env",
               flush=True)
 
     signal.signal(signal.SIGHUP, _handle_sighup)
 
     def load_db_creds():
-        """Parse the shell-export style file written by Vault Agent."""
         creds = {}
         try:
             with open(VAULT_SECRET_FILE) as f:
@@ -53,7 +46,6 @@ data:
         return creds
 
     def check_db_connectivity(creds):
-        """TCP-level connectivity check to the DB host:port (no driver needed)."""
         host = creds.get("DB_HOST", "")
         port = int(creds.get("DB_PORT", 5432))
         try:
@@ -74,7 +66,6 @@ data:
         def do_GET(self):
             if self.path == "/api/health":
                 self._respond(200, {"status": "ok", "pod": os.environ.get("HOSTNAME", "unknown")})
-
             elif self.path == "/api/db-creds":
                 creds = load_db_creds()
                 display = dict(creds)
@@ -85,7 +76,6 @@ data:
                     "secret_file": VAULT_SECRET_FILE,
                     "creds": display
                 })
-
             elif self.path == "/api/db-status":
                 creds = load_db_creds()
                 if "error" in creds:
@@ -99,7 +89,7 @@ data:
                 self._respond(404, {"error": "not found"})
 
         def log_message(self, fmt, *args):
-            pass  # suppress access log noise
+            pass
 
     if __name__ == "__main__":
         port = int(os.environ.get("PORT", 5000))

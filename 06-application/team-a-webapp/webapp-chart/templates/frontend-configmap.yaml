@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: {{ include "webapp.namespace" . }}
+  labels:
+    app: webapp-frontend
+    {{- include "webapp.labels" . | nindent 4 }}
+data:
+  nginx.conf: |
+    server {
+      listen 80;
+      server_name _;
+      location / {
+        root   /usr/share/nginx/html;
+        index  index.html;
+        try_files $uri $uri/ /index.html;
+      }
+    }
+
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Team-A Webapp</title>
+      <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+               background: #f0f2f5; margin: 0; padding: 24px; color: #333; }
+        .container { max-width: 760px; margin: 0 auto; }
+        h1 { font-size: 1.6rem; margin-bottom: 4px; }
+        .subtitle { color: #666; margin-bottom: 24px; font-size: 0.9rem; }
+        .arch { background: #fff; border: 1px solid #ddd; border-radius: 8px;
+                padding: 16px 20px; margin-bottom: 20px; font-size: 0.85rem; color: #555; }
+        .arch code { background: #f5f5f5; padding: 1px 5px; border-radius: 3px; }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+        button { padding: 9px 20px; border: none; border-radius: 6px; cursor: pointer;
+                 font-size: 0.9rem; background: #1a73e8; color: #fff; transition: background 0.15s; }
+        button:hover { background: #1558b0; }
+        .card { background: #fff; border: 1px solid #ddd; border-radius: 8px;
+                padding: 16px 20px; margin-bottom: 12px; }
+        .card.ok   { border-left: 4px solid #34a853; }
+        .card.err  { border-left: 4px solid #ea4335; }
+        .card.info { border-left: 4px solid #1a73e8; }
+        .card-title { font-weight: 600; margin-bottom: 8px; }
+        pre { background: #f8f9fa; padding: 12px; border-radius: 6px;
+              overflow-x: auto; font-size: 0.82rem; margin: 0; }
+        .loading { color: #888; font-style: italic; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Team-A Webapp</h1>
+        <p class="subtitle">2-tier demo on Kubernetes — DB credentials injected by Vault Agent</p>
+        <div class="arch">
+          <strong>Architecture</strong><br/>
+          Browser &rarr; <code>Ingress ({{ .Values.ingress.hostname }})</code> &rarr; <code>Frontend (nginx)</code><br/>
+          Browser &rarr; <code>Ingress ({{ .Values.ingress.hostname }})</code> &rarr; <code>Backend (Python /api/*)</code> &rarr; <code>PostgreSQL</code><br/>
+          <br/>
+          Vault Agent sidecar reads <code>{{ .Values.vault.secretPath }}</code>
+          and writes <code>/vault/secrets/{{ .Values.vault.secretFile }}</code> into the backend pod.
+        </div>
+        <div class="btn-row">
+          <button onclick="checkHealth()">Backend Health</button>
+          <button onclick="checkDbCreds()">Vault-Injected Creds</button>
+          <button onclick="checkDbStatus()">DB Connectivity</button>
+        </div>
+        <div id="result"></div>
+      </div>
+      <script>
+        async function api(path) {
+          const res = await fetch('/api' + path);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        }
+        function render(label, data, isOk) {
+          const cls = isOk === true ? 'ok' : isOk === false ? 'err' : 'info';
+          document.getElementById('result').innerHTML =
+            '<div class="card ' + cls + '">' +
+            '<div class="card-title">' + label + '</div>' +
+            '<pre>' + JSON.stringify(data, null, 2) + '</pre>' +
+            '</div>';
+        }
+        function setLoading() {
+          document.getElementById('result').innerHTML = '<p class="loading">Loading...</p>';
+        }
+        async function checkHealth() {
+          setLoading();
+          try { const d = await api('/health'); render('Backend Health', d, d.status === 'ok'); }
+          catch(e) { render('Backend Health — Error', {error: e.message}, false); }
+        }
+        async function checkDbCreds() {
+          setLoading();
+          try { const d = await api('/db-creds'); render('Vault-Injected DB Credentials', d, d.vault_injected); }
+          catch(e) { render('DB Creds — Error', {error: e.message}, false); }
+        }
+        async function checkDbStatus() {
+          setLoading();
+          try { const d = await api('/db-status'); render('DB Connectivity', d, d.connected); }
+          catch(e) { render('DB Status — Error', {error: e.message}, false); }
+        }
+      </script>
+    </body>
+    </html>

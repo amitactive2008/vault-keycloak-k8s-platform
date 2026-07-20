@@ -1,30 +1,30 @@
-# PostgreSQL for team-a webapp
-#
-# The K8s Secret here bootstraps the initial DB user/password so PostgreSQL
-# starts up correctly.  The *application* (backend) does NOT read this Secret —
-# it gets credentials from Vault Agent at /vault/secrets/db.env.
-# Both sources must use the same username/password.
----
+# ── Headless Service (StatefulSet DNS) ───────────────────────
 apiVersion: v1
-kind: Secret
+kind: Service
 metadata:
-  name: postgres-init
-  namespace: team-a
+  name: postgres
+  namespace: {{ include "webapp.namespace" . }}
   labels:
     app: postgres
-type: Opaque
-stringData:
-  POSTGRES_USER: webapp_user
-  POSTGRES_PASSWORD: "S3cur3P@ssw0rd"   # DEMO ONLY — must match vault-setup.sh Step 1
-  POSTGRES_DB: webapp_db
+    {{- include "webapp.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: 5432
 ---
+# ── PostgreSQL StatefulSet ────────────────────────────────────
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: team-a
+  namespace: {{ include "webapp.namespace" . }}
   labels:
     app: postgres
+    {{- include "webapp.labels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
@@ -38,7 +38,8 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          image: {{ include "webapp.postgresql.image" . }}
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
           ports:
             - name: pg
               containerPort: 5432
@@ -65,37 +66,24 @@ spec:
               mountPath: /var/lib/postgresql/data
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "webapp_user", "-d", "webapp_db"]
+              command:
+                - pg_isready
+                - -U
+                - {{ .Values.postgresql.auth.username }}
+                - -d
+                - {{ .Values.postgresql.auth.database }}
             initialDelaySeconds: 5
             periodSeconds: 5
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+            {{- toYaml .Values.postgresql.resources | nindent 12 }}
   volumeClaimTemplates:
     - metadata:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
+        {{- with .Values.postgresql.storage.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
         resources:
           requests:
-            storage: 1Gi
----
-# Headless service — DNS: postgres.team-a.svc.cluster.local
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: team-a
-  labels:
-    app: postgres
-spec:
-  selector:
-    app: postgres
-  ports:
-    - port: 5432
-      targetPort: 5432
-  clusterIP: None
+            storage: {{ .Values.postgresql.storage.size }}

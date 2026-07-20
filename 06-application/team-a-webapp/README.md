@@ -1,12 +1,25 @@
 # Team-A Webapp — 2-Tier Application with Vault Secret Injection
 
-A demo 2-tier web application deployed in the `team-a` namespace. It demonstrates
-two Vault features on Kubernetes:
+A demo 2-tier web application deployed in the `team-a` namespace that showcases
+two HashiCorp Vault features on Kubernetes:
 
-| Feature | What it shows |
-|---------|--------------|
-| **Vault Agent sidecar injection** | Backend pod authenticates to Vault via its K8s service account token and receives DB credentials at `/vault/secrets/db.env` — no hardcoded secrets anywhere |
-| **Kubernetes secrets engine** | Vault dynamically generates short-lived Kubernetes service account tokens on demand (`vault read kubernetes/creds/team-a-webapp-sa`) |
+| Feature | What it demonstrates |
+|---------|---------------------|
+| **Vault Agent sidecar injection** | Backend pod authenticates to Vault via its Kubernetes ServiceAccount token and receives DB credentials at `/vault/secrets/db.env` — no hardcoded secrets anywhere |
+| **Kubernetes secrets engine** | Vault dynamically generates short-lived Kubernetes ServiceAccount tokens on demand (`vault read kubernetes/creds/team-a-webapp-sa`) |
+
+---
+
+## Install sequence
+
+Follow these steps in order. Each item links to the relevant file or section.
+
+- [ ] **1.** Configure Vault — run [`vault-setup.sh`](vault-setup.sh) → see [Step 1 — Configure Vault](#step-1--configure-vault)
+- [ ] **2.** Edit overrides if needed — [`values.yaml`](values.yaml)
+- [ ] **3.** Deploy the app — `helm install` → see [Step 2 — Install via Helm](#step-2--install-via-helm)
+- [ ] **4.** Add DNS entry — `echo "127.0.0.1 team-a-webapp.local" | sudo tee -a /etc/hosts`
+- [ ] **5.** Verify pods are Running — `kubectl get pods -n team-a`
+- [ ] **6.** Open the app — [http://team-a-webapp.local](http://team-a-webapp.local) → see [Step 3 — Open the app](#step-3--open-the-app)
 
 ---
 
@@ -16,250 +29,242 @@ two Vault features on Kubernetes:
 Browser
   │
   ▼
-http://team-a-webapp.local          (/etc/hosts → 127.0.0.1)
+http://team-a-webapp.local   (/etc/hosts → 127.0.0.1)
   │
   ▼
-nginx Ingress (ingress-nginx)
+nginx Ingress
   │
-  ├── /api/*  ──────────────────────► webapp-backend (Python, :5000)
-  │                                        │
-  │                                        │  reads /vault/secrets/db.env
-  │                                        ▼
-  │                                   vault-agent sidecar
-  │                                        │  Kubernetes auth
-  │                                        ▼
-  │                                   Vault (secret/data/team-a/webapp/db)
-  │                                        │
-  │                                        ▼
-  │                                   PostgreSQL (:5432)
+  ├── /api/*  ─────────────────► webapp-backend (Python :5000)
+  │                                    │
+  │                             reads /vault/secrets/db.env
+  │                                    │
+  │                             vault-agent sidecar
+  │                                    │  Kubernetes auth
+  │                                    ▼
+  │                             Vault (secret/data/team-a/webapp/db)
   │
-  └── /*  ──────────────────────────► webapp-frontend (nginx, :80)
+  └── /      ─────────────────► webapp-frontend (nginx :80)
+                                  - static HTML + JS
+                                  - calls /api/* buttons
+                                        │
+                                        ▼
+                                 PostgreSQL :5432
+                                 (team-a namespace)
 ```
 
 ### Components
 
-| Resource | Kind | Namespace | Image |
-|----------|------|-----------|-------|
-| `webapp-frontend` | Deployment | `team-a` | `nginx:alpine` |
-| `webapp-backend` | Deployment | `team-a` | `python:3.11-slim` |
-| `postgres` | StatefulSet | `team-a` | `postgres:16-alpine` |
-| `team-a-webapp` | Ingress | `team-a` | — |
-| `webapp-backend` | ServiceAccount | `team-a` | — |
+| Component | Image | Purpose |
+|-----------|-------|---------|
+| `webapp-backend` | `python:3.11-slim` | Python HTTP API — reads DB creds from Vault, exposes `/api/health`, `/api/db-creds`, `/api/db-status` |
+| `webapp-frontend` | `nginx:alpine` | Serves `index.html` — UI with buttons to call the backend API |
+| `postgres` | `postgres:16-alpine` | PostgreSQL — receives app traffic from backend |
+| Vault Agent sidecar | (injected by Vault injector) | Authenticates to Vault using the `webapp-backend` SA token, renders `db.env` into the backend pod |
 
 ---
 
-## File Structure
+## Folder structure
 
 ```
-application/team-a-webapp/
-├── vault-setup.sh           ← one-time Vault configuration script
-├── vault-rbac.yaml          ← RBAC: grants vault SA permission to issue K8s tokens
-├── serviceaccount.yaml      ← webapp-backend ServiceAccount (used by Vault Agent auth)
-├── postgres.yaml            ← PostgreSQL StatefulSet + headless Service + init Secret
-├── backend-configmap.yaml   ← ConfigMap: server.py (Python API server script)
-├── backend.yaml             ← Python API Deployment + Service + Vault Agent sidecar annotations
-├── frontend-configmap.yaml  ← ConfigMap: nginx.conf + index.html
-├── frontend.yaml            ← nginx SPA Deployment + Service
-└── ingress.yaml             ← ingress-nginx: routes /api/* → backend, /* → frontend
+06-application/team-a-webapp/
+├── values.yaml              ← edit this to customise your install
+├── vault-setup.sh           ← run first: configures Vault (credentials, policy, auth)
+└── webapp-chart/
+    ├── Chart.yaml
+    ├── values.yaml          ← all chart defaults with comments
+    └── templates/
+        ├── _helpers.tpl
+        ├── serviceaccount.yaml       ← webapp-backend SA (used by Vault Agent)
+        ├── vault-rbac.yaml           ← ClusterRole for Vault K8s secrets engine
+        ├── postgres-secret.yaml      ← PostgreSQL bootstrap secret
+        ├── postgres.yaml             ← StatefulSet + Service
+        ├── backend-configmap.yaml    ← server.py script
+        ├── frontend-configmap.yaml   ← nginx.conf + index.html
+        ├── backend-deployment.yaml   ← Deployment + Service (with Vault annotations)
+        ├── frontend-deployment.yaml  ← Deployment + Service
+        └── ingress.yaml              ← routes /api/* → backend, / → frontend
 ```
 
 ---
 
 ## Prerequisites
 
-- Vault deployed and unsealed (`vault/`)
-- Keycloak deployed with OIDC integration (`keycloak/vault-integration/setup.sh` run)
-- `team-a` namespace exists (created by `keycloak/k8s-oidc/setup.sh`)
-- `vault/cluster-keys.json` present (contains root token)
+| Requirement | What to check |
+|-------------|---------------|
+| Kind cluster running | `kubectl get nodes` |
+| Vault deployed and unsealed (`02-vault`) | `kubectl get pods -n vault` |
+| Vault OIDC integration done (`04-vault-keycloak-integration`) | `vault read auth/oidc/config` |
+| Vault injector running | `kubectl get pods -n vault -l component=webhook` |
+| `team-a` namespace exists | `kubectl get ns team-a` (created by `05-k8s-oidc-with-keycloak/setup.sh`) |
+| `02-vault/cluster-keys.json` | Root token file exists locally |
 
 ---
 
-## Deployment
+## Step 1 — Configure Vault
 
-### Step 1 — Grant Vault SA the RBAC to issue Kubernetes tokens
-
-```bash
-kubectl apply -f application/team-a-webapp/vault-rbac.yaml
-```
-
-This creates a `ClusterRole` + `ClusterRoleBinding` so the `vault` service account
-can call the Kubernetes `TokenRequest` API — required by the Kubernetes secrets engine.
-
-### Step 2 — Configure Vault (run once)
+Run `vault-setup.sh` **once** to configure Vault before deploying the app.
 
 ```bash
-cd application/team-a-webapp/
+cd 06-application/team-a-webapp
 chmod +x vault-setup.sh
 ./vault-setup.sh
 ```
 
-The script:
-1. Writes DB credentials to `secret/data/team-a/webapp/db`
-2. Creates Vault policy `team-a-webapp` (read-only on `secret/data/team-a/webapp/*`)
-3. Enables and configures the **Kubernetes auth method** (pod SA token login)
-4. Creates auth role `team-a-webapp` bound to the `webapp-backend` SA in `team-a`
-5. Enables and configures the **Kubernetes secrets engine** (in-cluster)
-6. Creates secrets engine role `team-a-webapp-sa` to generate SA tokens dynamically
+### What vault-setup.sh does
 
-### Step 3 — Deploy the application
+| Step | Action |
+|------|--------|
+| **1** | Writes DB credentials to `secret/data/team-a/webapp/db` (accessible by all team-a users via `team-a-policy`) |
+| **2** | Creates a Vault policy `team-a-webapp` scoped to `secret/data/team-a/webapp/*` (read-only) |
+| **3** | Enables the Kubernetes auth method at `auth/kubernetes/` |
+| **4** | Configures Kubernetes auth to trust the cluster's CA (`kubernetes.default.svc.cluster.local:443`) |
+| **5** | Creates Kubernetes auth role `team-a-webapp` — binds the `webapp-backend` ServiceAccount in namespace `team-a` to `team-a-webapp` policy |
+| **6** | Enables the Kubernetes secrets engine at `kubernetes/` |
+| **7** | Configures the Kubernetes secrets engine for in-cluster use |
+| **8** | Creates a Kubernetes secrets engine role `team-a-webapp-sa` for generating dynamic ServiceAccount tokens |
+
+---
+
+## Step 2 — Install via Helm
 
 ```bash
-kubectl apply -f application/team-a-webapp/serviceaccount.yaml
-kubectl apply -f application/team-a-webapp/postgres.yaml
-kubectl apply -f application/team-a-webapp/backend-configmap.yaml
-kubectl apply -f application/team-a-webapp/backend.yaml
-kubectl apply -f application/team-a-webapp/frontend-configmap.yaml
-kubectl apply -f application/team-a-webapp/frontend.yaml
-kubectl apply -f application/team-a-webapp/ingress.yaml
+cd 06-application/team-a-webapp
+
+# Preview what will be deployed
+helm template team-a-webapp ./webapp-chart \
+  -f ./values.yaml \
+  --namespace team-a
+
+# Install
+helm install team-a-webapp ./webapp-chart \
+  -f ./values.yaml \
+  --namespace team-a --create-namespace
 ```
 
-### Step 4 — Add local DNS entry (one-time)
+Add the local DNS entry (one-time):
 
 ```bash
 echo "127.0.0.1 team-a-webapp.local" | sudo tee -a /etc/hosts
 ```
 
-> **macOS `.local` DNS note:** macOS routes `.local` domains through mDNS by
-> default, which causes `curl` and browsers to time out. Use the IP directly
-> or `curl --resolve team-a-webapp.local:80:127.0.0.1 http://team-a-webapp.local`
-> if you see hangs.
+Watch pods start:
+
+```bash
+kubectl get pods -n team-a -w
+```
+
+Expected steady state (takes ~30 s):
+
+```
+NAME                              READY   STATUS
+postgres-0                        1/1     Running
+webapp-backend-xxx                2/2     Running   ← 2/2 = app + Vault Agent sidecar
+webapp-frontend-xxx               1/1     Running
+```
 
 ---
 
-## Verify
+## Step 3 — Open the app
 
-### Check all pods are Running / Ready
+Navigate to **http://team-a-webapp.local** in your browser.
 
-```bash
-kubectl get po,svc,ingress -n team-a
-```
+The UI has three buttons:
 
-Expected:
-
-```
-NAME                                   READY   STATUS    RESTARTS
-pod/postgres-0                         1/1     Running   0
-pod/webapp-backend-<hash>              2/2     Running   0   ← 2/2 = app + vault-agent sidecar
-pod/webapp-frontend-<hash>             1/1     Running   0
-
-NAME                      TYPE        CLUSTER-IP      PORTS
-service/postgres          ClusterIP   None            5432/TCP
-service/webapp-backend    ClusterIP   <ip>            5000/TCP
-service/webapp-frontend   ClusterIP   <ip>            80/TCP
-
-NAME                              CLASS   HOSTS                 ADDRESS
-ingress/team-a-webapp             nginx   team-a-webapp.local   localhost
-```
-
-> `webapp-backend` shows **2/2** because the Vault Agent sidecar container
-> is injected alongside the main app container.
-
-### Confirm Vault Agent injected the secret
-
-```bash
-kubectl exec -n team-a deploy/webapp-backend -c backend -- cat /vault/secrets/db.env
-```
-
-Expected output:
-
-```
-export DB_HOST=postgres.team-a.svc.cluster.local
-export DB_PORT=5432
-export DB_USER=webapp_user
-export DB_PASSWORD=S3cur3P@ssw0rd
-export DB_NAME=webapp_db
-```
-
-### Test the API endpoints
-
-```bash
-# Backend health
-curl --resolve team-a-webapp.local:80:127.0.0.1 http://team-a-webapp.local/api/health
-
-# Vault-injected DB credentials (password masked)
-curl --resolve team-a-webapp.local:80:127.0.0.1 http://team-a-webapp.local/api/db-creds
-
-# TCP connectivity to PostgreSQL
-curl --resolve team-a-webapp.local:80:127.0.0.1 http://team-a-webapp.local/api/db-status
-```
-
-### Open in browser
-
-```
-http://team-a-webapp.local
-```
-
-Use the three buttons to verify backend health, Vault injection, and DB connectivity.
+| Button | API endpoint | What it shows |
+|--------|-------------|---------------|
+| **Backend Health** | `GET /api/health` | Pod hostname and status `ok` |
+| **Vault-Injected Creds** | `GET /api/db-creds` | DB credentials from `/vault/secrets/db.env` (password redacted) |
+| **DB Connectivity** | `GET /api/db-status` | TCP connectivity check to `postgres.team-a.svc.cluster.local:5432` |
 
 ---
 
-## Vault Secret Access (team-a users)
+## Vault secret injection flow
 
-DB credentials are stored at a path that all `team-a` group members can read
-**and modify** through the existing `team-a-policy`:
+```
+pod starts
+  │
+  ▼
+Vault Agent init container
+  → authenticates: POST auth/kubernetes/login
+    { "role": "team-a-webapp", "jwt": <webapp-backend SA token> }
+  → Vault validates SA token against kube-apiserver
+  → issues a Vault token with team-a-webapp policy
+  │
+  ▼
+Vault Agent renders template:
+  secret/data/team-a/webapp/db → /vault/secrets/db.env
+  export DB_HOST=postgres.team-a.svc.cluster.local
+  export DB_PORT=5432
+  export DB_USER=webapp_user
+  export DB_PASSWORD=S3cur3P@ssw0rd
+  export DB_NAME=webapp_db
+  │
+  ▼
+Main container (backend) starts
+  → server.py reads /vault/secrets/db.env on every request
+  │
+  ▼
+Vault Agent sidecar keeps running
+  → renews Vault token before expiry
+  → on secret rotation: re-renders db.env → sends SIGHUP to PID 1
+  → server.py SIGHUP handler logs the refresh
+  → next request picks up the new credentials (hot-reload, no pod restart)
+```
+
+---
+
+## Upgrade
 
 ```bash
-# Log in to Vault as a team-a user (OIDC)
-vault login -method=oidc -path=oidc role=default
+# After editing values.yaml
+helm upgrade team-a-webapp ./webapp-chart \
+  -f ./values.yaml \
+  --namespace team-a
+```
 
-# Read the DB secret
+---
+
+## Uninstall
+
+```bash
+helm uninstall team-a-webapp --namespace team-a
+```
+
+This removes all chart-managed resources. The Vault configuration (policy,
+auth role, secrets) created by `vault-setup.sh` is **not** deleted — run the
+following if you want a full cleanup:
+
+```bash
+export VAULT_ADDR=https://vault.kind.local
+export VAULT_TOKEN=$(python3 -c "import json; print(json.load(open('../../02-vault/cluster-keys.json'))['root_token'])")
+
+vault kv delete secret/team-a/webapp/db
+vault policy delete team-a-webapp
+vault delete auth/kubernetes/role/team-a-webapp
+vault delete kubernetes/roles/team-a-webapp-sa
+```
+
+---
+
+## Useful commands
+
+```bash
+# Check Vault Agent sidecar injected the secret
+kubectl exec -n team-a \
+  $(kubectl get pod -n team-a -l app=webapp-backend -o jsonpath='{.items[0].metadata.name}') \
+  -c backend -- cat /vault/secrets/db.env
+
+# Check Vault Agent logs
+kubectl logs -n team-a \
+  $(kubectl get pod -n team-a -l app=webapp-backend -o jsonpath='{.items[0].metadata.name}') \
+  -c vault-agent
+
+# Read the DB credentials from Vault directly (as team-a user)
 vault kv get secret/team-a/webapp/db
 
-# Update the DB password
-vault kv patch secret/team-a/webapp/db password="NewP@ssw0rd"
-```
+# Generate a dynamic K8s ServiceAccount token (Vault K8s secrets engine)
+vault read kubernetes/creds/team-a-webapp-sa
 
-After updating a secret, the Vault Agent sidecar detects the change via a
-blocking query and immediately re-renders `/vault/secrets/db.env`. It then
-sends `SIGHUP` to the backend process (`kill -HUP 1`) via the
-`agent-inject-command` annotation. The backend's SIGHUP handler logs the
-refresh and the next API request reads the updated credentials — **no pod
-restart required**.
-
----
-
-## Kubernetes Secrets Engine (dynamic SA tokens)
-
-The Kubernetes secrets engine is configured with a role that can generate
-short-lived tokens for the `webapp-backend` service account:
-
-```bash
-# Authenticate to Vault (as devops or team-a user)
-vault login -method=oidc -path=oidc role=default
-
-# Request a dynamic Kubernetes service account token
-vault read kubernetes/creds/team-a-webapp-sa \
-  kubernetes_namespace=team-a
-
-# Sample output:
-# Key                          Value
-# ---                          -----
-# service_account_name         webapp-backend
-# service_account_namespace    team-a
-# service_account_token        eyJhbGci...   ← short-lived K8s token (TTL: 1h)
-```
-
-This token can be used as a `Bearer` token against the Kubernetes API — it
-expires automatically and is never stored long-term.
-
----
-
-## Cleanup
-
-```bash
-kubectl delete -f application/team-a-webapp/ingress.yaml
-kubectl delete -f application/team-a-webapp/frontend.yaml
-kubectl delete -f application/team-a-webapp/frontend-configmap.yaml
-kubectl delete -f application/team-a-webapp/backend.yaml
-kubectl delete -f application/team-a-webapp/backend-configmap.yaml
-kubectl delete -f application/team-a-webapp/postgres.yaml
-kubectl delete -f application/team-a-webapp/serviceaccount.yaml
-kubectl delete -f application/team-a-webapp/vault-rbac.yaml
-
-# Remove the Vault configuration (requires root token)
-vault login -method=token   # root token
-vault kv delete secret/team-a/webapp/db
-vault auth disable kubernetes
-vault secrets disable kubernetes
-vault policy delete team-a-webapp
+# Helm release status
+helm status team-a-webapp -n team-a
 ```

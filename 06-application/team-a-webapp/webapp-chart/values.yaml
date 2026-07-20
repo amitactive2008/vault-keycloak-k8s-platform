@@ -1,0 +1,71 @@
+# Default values for the team-a-webapp chart.
+# Override via -f ../values.yaml at install time.
+
+namespace: team-a
+
+# ── Backend (Python API server) ───────────────────────────────
+backend:
+  image:
+    repository: python
+    tag: "3.11-slim"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 5000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# ── Frontend (nginx static server) ───────────────────────────
+frontend:
+  image:
+    repository: nginx
+    tag: alpine
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# ── PostgreSQL ────────────────────────────────────────────────
+postgresql:
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    username: webapp_user
+    password: "S3cur3P@ssw0rd"   # DEMO ONLY — must match vault-setup.sh Step 1
+    database: webapp_db
+  storage:
+    size: 1Gi
+    # storageClassName: ""        # uncomment to override storage class
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── Vault Agent injection ─────────────────────────────────────
+vault:
+  # Kubernetes auth role bound to the webapp-backend ServiceAccount
+  role: team-a-webapp
+  # KV v2 path where DB credentials are stored (written by vault-setup.sh)
+  secretPath: secret/data/team-a/webapp/db
+  # Filename of the rendered secret file inside the container
+  secretFile: db.env
+  # Signal sent to PID 1 after secret re-render (triggers hot-reload)
+  reloadCommand: "kill -HUP 1"
+
+# ── Ingress ───────────────────────────────────────────────────
+ingress:
+  hostname: team-a-webapp.local
