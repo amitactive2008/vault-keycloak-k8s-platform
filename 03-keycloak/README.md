@@ -660,7 +660,7 @@ kubectl exec -n keycloak deployment/keycloak -- \
   /opt/keycloak/bin/kcadm.sh get users -r kind
 
 # Get an access token for a user (useful for API testing)
-curl -s -X POST https://keycloak.local/realms/kind/protocol/openid-connect/token \
+curl -s -X POST https://keycloak.kind.local/realms/kind/protocol/openid-connect/token \
   --cacert keycloak/k8s-oidc/keycloak-local-ca.crt \
   -d "client_id=admin-cli&grant_type=password&username=devops-user-1&password=password" \
   | python3 -m json.tool
@@ -681,6 +681,7 @@ kubectl delete ns keycloak
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| `INSTALLATION FAILED: unable to continue with install: Namespace "keycloak" … invalid ownership metadata` | Namespace was pre-created (e.g. by Step 1c `kubectl create namespace`) without Helm labels/annotations | Patch the namespace — see below |
 | `ERR_NAME_NOT_RESOLVED` in browser | `/etc/hosts` entry missing | `sudo sh -c 'echo "127.0.0.1  keycloak.local" >> /etc/hosts'` |
 | `keycloak` pod stuck in `Init:0/1` | PostgreSQL not ready | `kubectl logs -n keycloak keycloak-postgresql-0` |
 | `Realm 'kind' already exists. Import skipped` | Expected on restarts after first import | Re-import steps above if you changed `kind-realm.json` |
@@ -688,3 +689,41 @@ kubectl delete ns keycloak
 | `403 Forbidden` on admin console | Wrong realm URL | Use `/admin/kind/console` for realm-admin users, `/admin` for super-admin |
 | Slow Keycloak pages on first request | JVM cold start / CPU throttle | Resources are tuned; wait ~30 s for JIT warm-up on first load |
 | Vault OIDC login fails with `connection refused` | `keycloak.local` not in CoreDNS | Re-run `vault-integration/setup.sh` (Step 1 patches CoreDNS) |
+
+### Helm namespace ownership error
+
+Step 1c creates the `keycloak` namespace via `kubectl` so the TLS secret has
+somewhere to live before `helm install` runs. Helm requires namespaces it
+manages to carry specific labels and annotations. If the namespace was created
+without them you will see:
+
+```
+Error: INSTALLATION FAILED: unable to continue with install: Namespace "keycloak"
+in namespace "" exists and cannot be imported into the current release: invalid
+ownership metadata; label validation error: missing key
+"app.kubernetes.io/managed-by": must be set to "Helm"; annotation validation
+error: missing key "meta.helm.sh/release-name": must be set to "keycloak";
+annotation validation error: missing key "meta.helm.sh/release-namespace": must
+be set to "keycloak"
+```
+
+**Fix** — patch the existing namespace so Helm can take ownership, then
+re-run `helm install`:
+
+```bash
+kubectl patch namespace keycloak \
+  --type=merge \
+  -p '{
+    "metadata": {
+      "labels":      {"app.kubernetes.io/managed-by": "Helm"},
+      "annotations": {
+        "meta.helm.sh/release-name":      "keycloak",
+        "meta.helm.sh/release-namespace": "keycloak"
+      }
+    }
+  }'
+
+helm install keycloak ./keycloak-chart \
+  -f ./values.yaml \
+  --namespace keycloak --create-namespace
+```
