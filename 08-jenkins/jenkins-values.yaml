@@ -60,6 +60,39 @@ controller:
   jenkinsUrl: "https://jenkins.kind.local"
   jenkinsUriPrefix: "/"
 
+  # ── Health probes — TCP socket (no HTTP auth needed) ──────────────────────
+  # Anonymous access is fully disabled. The Jenkins Helm chart v5.9.40 hardcodes
+  # httpGet /login as the probe type and ignores tcpSocket set here.
+  # WORKAROUND: after every helm upgrade, run:
+  #   kubectl patch statefulset jenkins -n jenkins --type=json -p='[
+  #     {"op":"replace","path":"/spec/template/spec/containers/0/startupProbe","value":{"tcpSocket":{"port":8080},"failureThreshold":12,"initialDelaySeconds":90,"periodSeconds":10,"timeoutSeconds":5}},
+  #     {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe","value":{"tcpSocket":{"port":8080},"failureThreshold":5,"initialDelaySeconds":120,"periodSeconds":10,"timeoutSeconds":5}},
+  #     {"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe","value":{"tcpSocket":{"port":8080},"failureThreshold":3,"initialDelaySeconds":30,"periodSeconds":10,"timeoutSeconds":5}}
+  #   ]'
+  #   kubectl delete pod jenkins-0 -n jenkins
+  # These values are kept for documentation; the chart ignores tcpSocket overrides.
+  startupProbe:
+    failureThreshold: 12
+    initialDelaySeconds: 90
+    periodSeconds: 10
+    timeoutSeconds: 5
+    tcpSocket:
+      port: 8080
+  livenessProbe:
+    failureThreshold: 5
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    tcpSocket:
+      port: 8080
+  readinessProbe:
+    failureThreshold: 3
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    tcpSocket:
+      port: 8080
+
   # Credentials injected from Kubernetes Secrets (set by setup.sh)
   containerEnv:
     - name: DOCKERHUB_USERNAME
@@ -155,57 +188,58 @@ controller:
               allowTokenAccessWithoutOicSession: true
           authorizationStrategy:
             roleBased:
-              roles:
-                global:
-                  - name: "devops-admin"
-                    description: "Full Jenkins administrator — devops group + local admin"
-                    permissions:
-                      - "Overall/Administer"
-                    entries:
-                      - group: "devops"
-                      - user: "admin"
-                  - name: "authenticated-read"
-                    description: "Base role — all authenticated users can log in"
-                    permissions:
-                      - "Overall/Read"
-                    entries:
-                      - group: "authenticated"
-                  - name: "anonymous-probe"
-                    description: "Allow /login page for health probes and allow anonymous to trigger builds"
-                    permissions:
-                      - "Overall/Read"
-                      - "Job/Build"
-                      - "Job/Read"
-                    entries:
-                      - user: "anonymous"
-                items:
-                  - name: "team-a-developer"
-                    description: "Team A access — all jobs under team-a/ folder"
-                    pattern: "team-a.*"
-                    permissions:
-                      - "Job/Read"
-                      - "Job/Build"
-                      - "Job/Cancel"
-                      - "Job/Workspace"
-                      - "Run/Replay"
-                      - "Run/Update"
-                      - "View/Read"
-                    entries:
-                      - group: "team-a"
-                  - name: "team-b-developer"
-                    description: "Team B access — all jobs under team-b/ folder"
-                    pattern: "team-b.*"
-                    permissions:
-                      - "Job/Read"
-                      - "Job/Build"
-                      - "Job/Cancel"
-                      - "Job/Workspace"
-                      - "Run/Replay"
-                      - "Run/Update"
-                      - "View/Read"
-                    entries:
-                      - group: "team-b"
-                      - user: "anonymous"
+               roles:
+                 global:
+                   # devops → full Jenkins admin (Overall/Administer on everything)
+                   - name: "devops-admin"
+                     description: "Full Jenkins admin — devops Keycloak group + local admin user"
+                     permissions:
+                       - "Overall/Administer"
+                     entries:
+                       - group: "devops"
+                       - user: "admin"
+                   # All authenticated users can log in (Overall/Read)
+                   # team-a and team-b get their job access via item roles below
+                   - name: "authenticated-read"
+                     description: "All logged-in users can access Jenkins UI"
+                     permissions:
+                       - "Overall/Read"
+                     entries:
+                       - group: "authenticated"
+                   # NO anonymous role — anonymous users have zero access
+                 items:
+                   # team-a → full access to /team-a/* jobs only
+                   - name: "team-a-developer"
+                     description: "team-a Keycloak group — full access to team-a/* folder"
+                     pattern: "team-a.*"
+                     permissions:
+                       - "Job/Read"
+                       - "Job/Build"
+                       - "Job/Cancel"
+                       - "Job/Configure"
+                       - "Job/Create"
+                       - "Job/Workspace"
+                       - "Run/Replay"
+                       - "Run/Update"
+                       - "View/Read"
+                     entries:
+                       - group: "team-a"
+                   # team-b → full access to /team-b/* jobs only
+                   - name: "team-b-developer"
+                     description: "team-b Keycloak group — full access to team-b/* folder"
+                     pattern: "team-b.*"
+                     permissions:
+                       - "Job/Read"
+                       - "Job/Build"
+                       - "Job/Cancel"
+                       - "Job/Configure"
+                       - "Job/Create"
+                       - "Job/Workspace"
+                       - "Run/Replay"
+                       - "Run/Update"
+                       - "View/Read"
+                     entries:
+                       - group: "team-b"
         security:
           gitHostKeyVerificationConfiguration:
             sshHostKeyVerificationStrategy: "noHostKeyVerificationStrategy"
