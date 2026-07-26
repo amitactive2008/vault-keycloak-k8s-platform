@@ -1,0 +1,58 @@
+# HTTPS HTTPRoute — path-based routing to frontend and backend.
+# TLS is terminated at the Envoy Gateway using the wildcard *.kind.local cert.
+# Routes are attached to the shared native-gateway in the default namespace.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: team-a-webapp
+  namespace: {{ include "webapp.namespace" . }}
+  labels:
+    app: team-a-webapp
+    {{- include "webapp.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: https
+  hostnames:
+  - {{ .Values.ingress.hostname | quote }}
+  rules:
+  # /api/* → backend Python server
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/
+    backendRefs:
+    - name: webapp-backend
+      port: {{ .Values.backend.port }}
+  # / → frontend nginx
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: webapp-frontend
+      port: 80
+---
+# HTTP → HTTPS redirect for team-a-webapp.kind.local
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: team-a-webapp-http-redirect
+  namespace: {{ include "webapp.namespace" . }}
+  labels:
+    app: team-a-webapp
+    {{- include "webapp.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: http
+  hostnames:
+  - {{ .Values.ingress.hostname | quote }}
+  rules:
+  - filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        statusCode: 301

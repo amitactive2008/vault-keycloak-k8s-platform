@@ -1,0 +1,70 @@
+# BuildKit daemon deployed without TLS for local Kind development.
+# Agent pods connect to tcp://buildkitd:1234 (no cert auth needed).
+# The Makefile's BUILDKIT_HOST=tcp://buildkitd:1234 matches this service.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buildkitd
+  labels:
+    app: buildkitd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: buildkitd
+  template:
+    metadata:
+      labels:
+        app: buildkitd
+      annotations:
+        container.apparmor.security.beta.kubernetes.io/buildkitd: unconfined
+    spec:
+      containers:
+        - name: buildkitd
+          image: moby/buildkit:master-rootless
+          args:
+            - --addr
+            - unix:///run/user/1000/buildkit/buildkitd.sock
+            - --addr
+            - tcp://0.0.0.0:1234
+            - --oci-worker-no-process-sandbox
+          readinessProbe:
+            exec:
+              command: ["buildctl", "debug", "workers"]
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          livenessProbe:
+            exec:
+              command: ["buildctl", "debug", "workers"]
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          securityContext:
+            seccompProfile:
+              type: Unconfined
+            runAsUser: 1000
+            runAsGroup: 1000
+          ports:
+            - containerPort: 1234
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: buildkitd
+  labels:
+    app: buildkitd
+spec:
+  selector:
+    app: buildkitd
+  ports:
+    - port: 1234
+      targetPort: 1234
+      protocol: TCP
+  type: ClusterIP

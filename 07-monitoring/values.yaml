@@ -1,0 +1,275 @@
+# kube-prometheus-stack Helm values
+# Chart   : prometheus-community/kube-prometheus-stack 87.19.0
+# Grafana : 13.1.1  |  Prometheus Operator: v0.92.1
+# Release : kube-prom  |  Namespace: monitoring
+#
+# Install:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm repo update
+#   helm install kube-prom prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring --create-namespace \
+#     --values values.yaml \
+#     --version 87.19.0
+#
+# Upgrade:
+#   helm upgrade kube-prom prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring \
+#     --values values.yaml \
+#     --version <NEW_VERSION> \
+#     --reuse-values
+
+# ── Prometheus ────────────────────────────────────────────────────────────────
+prometheus:
+  prometheusSpec:
+    # Data retention
+    retention: 30d
+    retentionSize: "9GB"
+
+    # Persistent storage
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+    # Allow Prometheus to discover ServiceMonitors/PodMonitors/PrometheusRules
+    # from ALL namespaces (not just the monitoring namespace)
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+
+    # Scrape ALL namespaces
+    serviceMonitorNamespaceSelector: {}
+    podMonitorNamespaceSelector: {}
+    ruleNamespaceSelector: {}
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+
+    # Blackbox exporter scrape jobs — Prometheus uses the blackbox pod as a proxy
+    # to probe *.kind.local endpoints. CoreDNS resolves them → Envoy GW ClusterIP.
+    # All probes use the http_2xx_insecure module (TLS skip for self-signed CA).
+    additionalScrapeConfigs:
+      # HTTP probes for all platform endpoints
+      - job_name: blackbox-http-platform
+        metrics_path: /probe
+        params:
+          module: [http_2xx_insecure]
+        static_configs:
+          - targets:
+              - https://vault.kind.local/v1/sys/health
+              - https://keycloak.kind.local/realms/kind/.well-known/openid-configuration
+              - https://team-a-webapp.kind.local/api/health
+              - https://grafana.kind.local/api/health
+              - https://prometheus.kind.local/-/healthy
+              - https://alertmanager.kind.local/-/healthy
+              - https://blackbox-exporter.kind.local/health
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: blackbox-prometheus-blackbox-exporter.monitoring:9115
+
+  # Expose Prometheus UI via ClusterIP (HTTPRoute handles external access)
+  service:
+    type: ClusterIP
+
+# ── Alertmanager ──────────────────────────────────────────────────────────────
+alertmanager:
+  alertmanagerSpec:
+    # Persistent storage
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ["alertname", "namespace"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: "null"
+      routes:
+        - matchers:
+            - alertname = "Watchdog"
+          receiver: "null"
+        - matchers:
+            - severity = "critical"
+          receiver: "null"
+    receivers:
+      - name: "null"
+    inhibit_rules:
+      - source_matchers:
+          - severity = "critical"
+        target_matchers:
+          - severity = "warning"
+        equal: [alertname, namespace, service]
+
+  service:
+    type: ClusterIP
+
+# ── Grafana ───────────────────────────────────────────────────────────────────
+grafana:
+  # Local admin credentials (bypasses Keycloak — for setup script and emergency access)
+  adminUser: admin
+  adminPassword: "Admin@Grafana2024!"
+
+  # Disable client-side secret-leak validation (acceptable for local demo;
+  # in production use K8s Secret + GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET env var)
+  assertNoLeakedSecrets: false
+
+  # Persistent storage for dashboards, org data, and user preferences
+  persistence:
+    enabled: true
+    size: 2Gi
+
+  # Disable built-in Ingress — Gateway API HTTPRoute handles external access
+  ingress:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # ── grafana.ini ────────────────────────────────────────────────────────────
+  grafana.ini:
+    server:
+      domain: grafana.kind.local
+      root_url: "https://grafana.kind.local"
+
+    # Allow local login form AND Keycloak SSO (local admin uses password form)
+    auth:
+      disable_login_form: false
+      oauth_auto_login: false
+      signout_redirect_url: "https://keycloak.kind.local/realms/kind/protocol/openid-connect/logout?redirect_uri=https%3A%2F%2Fgrafana.kind.local%2Flogin"
+
+    # Generic OAuth 2.0 / OIDC — Keycloak 'kind' realm
+    # Client: grafana (confidential, created by setup.sh)
+    # Groups claim: flat names (full.path=false) — devops, team-a, team-b
+    auth.generic_oauth:
+      enabled: true
+      name: "Keycloak"
+      allow_sign_up: true
+      client_id: grafana
+      client_secret: "Grafana@Keycloak2024!"
+      scopes: "openid email profile"
+      empty_scopes: false
+      auth_url: "https://keycloak.kind.local/realms/kind/protocol/openid-connect/auth"
+      token_url: "https://keycloak.kind.local/realms/kind/protocol/openid-connect/token"
+      api_url: "https://keycloak.kind.local/realms/kind/protocol/openid-connect/userinfo"
+      # Claims to map to Grafana user fields
+      login_attribute_path: preferred_username
+      name_attribute_path: name
+      email_attribute_name: email
+      # groups claim (Keycloak groups mapper, full.path=false)
+      groups_attribute_path: groups
+      # Global role: devops→Admin, team members→Editor
+      # Per-org roles are controlled by org_mapping below (takes precedence)
+      role_attribute_path: "contains(groups[*], 'devops') && 'Admin' || 'Editor'"
+      role_attribute_strict: false
+      # Multi-org mapping (Grafana 10.2+):
+      #   devops  → Admin in admin, team-a, team-b orgs
+      #   team-a  → Admin in team-a org only
+      #   team-b  → Admin in team-b org only
+      # Organizations must exist before first SSO login (created by setup.sh)
+      org_mapping: "devops:admin:Admin devops:team-a:Admin devops:team-b:Admin team-a:team-a:Admin team-b:team-b:Admin"
+      # Re-sync org assignments on every login (respects Keycloak group changes)
+      skip_org_role_sync: false
+      # Use PKCE for added security
+      use_pkce: true
+      # Skip TLS verification for local self-signed cert-manager CA (local dev only)
+      tls_skip_verify_insecure: true
+
+    # User org assignment
+    # auto_assign_org=false → new SSO users ONLY get orgs from org_mapping
+    # (no implicit assignment to org 1 for SSO users)
+    users:
+      auto_assign_org: false
+      default_theme: dark
+
+    security:
+      allow_embedding: true
+      cookie_secure: true
+      cookie_samesite: lax
+
+  # Sidecar: watches ConfigMaps/Secrets with label grafana_dashboard=1
+  # and auto-imports them into org 1 (admin org). Searches ALL namespaces.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: true
+      label: grafana_datasource
+      labelValue: "1"
+      searchNamespace: ALL
+
+  # NOTE: Do NOT use additionalDataSources here — kube-prometheus-stack already
+  # provisions a default Prometheus datasource for org 1 (admin) via its own
+  # datasources ConfigMap. Duplicating it causes "Only one datasource per
+  # organization can be marked as default" startup failure.
+  # Datasources for team-a and team-b orgs are created by setup.sh via the API.
+
+# ── Node Exporter ─────────────────────────────────────────────────────────────
+nodeExporter:
+  enabled: true
+
+# ── kube-state-metrics ────────────────────────────────────────────────────────
+kubeStateMetrics:
+  enabled: true
+
+# ── Prometheus Operator ───────────────────────────────────────────────────────
+prometheusOperator:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ── Default scrape configs (keep standard Kubernetes monitoring) ──────────────
+kubeControllerManager:
+  enabled: true
+kubeScheduler:
+  enabled: true
+kubeProxy:
+  enabled: true
+kubeEtcd:
+  enabled: true
+
+# ── Grafana uses Gateway API — disable Ingress on all sub-charts ──────────────
+# (Services are all ClusterIP; Gateway HTTPRoutes handle external access)

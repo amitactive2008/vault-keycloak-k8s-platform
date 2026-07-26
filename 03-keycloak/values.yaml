@@ -1,0 +1,56 @@
+# ============================================================
+# values.yaml — User-facing overrides for the Keycloak chart.
+#
+# Edit this file to customise your deployment.
+# All available options are documented in ./keycloak-chart/values.yaml.
+#
+# Install:
+#   helm install keycloak ./keycloak-chart \
+#     -f ./values.yaml \
+#     --namespace keycloak --create-namespace
+#
+# Upgrade:
+#   helm upgrade keycloak ./keycloak-chart \
+#     -f ./values.yaml \
+#     --namespace keycloak
+#
+# Dry-run / preview:
+#   helm template keycloak ./keycloak-chart \
+#     -f ./values.yaml \
+#     --namespace keycloak
+#
+# Uninstall:
+#   helm uninstall keycloak --namespace keycloak
+# ============================================================
+
+namespace: keycloak
+
+keycloak:
+  hostname: keycloak.kind.local
+
+  auth:
+    adminUsername: admin
+    adminPassword: "Admin@Keycloak2024!"   # CHANGE IN PRODUCTION
+
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: 1536Mi
+    limits:
+      cpu: "2000m"
+      memory: 3Gi
+
+postgresql:
+  auth:
+    username: keycloak
+    password: "Keycloak@2024!"             # CHANGE IN PRODUCTION
+    database: keycloak
+
+  storage:
+    size: 4Gi
+
+ingress:
+  enabled: false   # nginx ingress disabled — traffic routed via Envoy Gateway HTTPRoute (keycloak-httproute.yaml)
+
+realm:
+  importEnabled: true   # Mounts kind-realm.json and imports on first boot

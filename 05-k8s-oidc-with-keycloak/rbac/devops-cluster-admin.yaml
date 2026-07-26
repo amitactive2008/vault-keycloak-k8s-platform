@@ -1,0 +1,16 @@
+# Grants the Keycloak 'devops' group full cluster-admin access.
+# Group name comes from the 'groups' JWT claim (full.path=false → "devops").
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: keycloak-devops-cluster-admin
+  labels:
+    app.kubernetes.io/managed-by: keycloak-k8s-oidc
+subjects:
+  - kind: Group
+    name: devops                          # matches JWT groups claim value
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,118 @@
+# cert-manager resources for vault-keycloak-k8s-platform
+#
+# Replaces manual openssl wildcard cert generation with automated issuance and renewal.
+#
+# This file provisions:
+#   1. selfsigned-issuer    — bootstraps the local CA (self-signed, no external CA needed)
+#   2. kind-local-ca        — root CA certificate (ECDSA P-256, 5-year, isCA: true)
+#                             stored in Secret: cert-manager/kind-local-ca-secret
+#   3. kind-local-ca-issuer — CA-backed ClusterIssuer that signs *.kind.local certs
+#   4. wildcard-kind-local-tls — wildcard cert for *.kind.local (1-year, auto-renews 30d before expiry)
+#                             stored in Secret: default/wildcard-kind-local-tls
+#                             (gateway-infra.yaml references this secret directly — no changes needed)
+#
+# Prerequisites:
+#   cert-manager installed and all pods Ready:
+#     helm repo add jetstack https://charts.jetstack.io && helm repo update
+#     helm install cert-manager jetstack/cert-manager \
+#       --namespace cert-manager --create-namespace \
+#       --set crds.enabled=true
+#     kubectl rollout status deployment/cert-manager -n cert-manager
+#     kubectl rollout status deployment/cert-manager-webhook -n cert-manager
+#
+# Apply:
+#   kubectl apply -f cert-manager.yaml
+#   kubectl wait --for=condition=Ready certificate/kind-local-ca -n cert-manager --timeout=60s
+#   kubectl wait --for=condition=Ready certificate/wildcard-kind-local-tls -n default --timeout=60s
+#
+# Trust the CA on macOS (one-time after applying):
+#   kubectl get secret kind-local-ca-secret -n cert-manager \
+#     -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/kind-local-ca.crt
+#   sudo security add-trusted-cert -d -r trustRoot \
+#     -k /Library/Keychains/System.keychain /tmp/kind-local-ca.crt
+#   rm /tmp/kind-local-ca.crt
+#
+# Cert renewal is fully automatic — cert-manager monitors expiry and renews 30 days before.
+# No manual openssl commands or kubectl create secret tls needed.
+---
+# ── 1. Bootstrap: SelfSigned ClusterIssuer ──────────────────────────────────
+# Used only to issue the root CA certificate below.
+# Once the CA is issued, this issuer is no longer used for workload certs.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+
+---
+# ── 2. Root CA Certificate ───────────────────────────────────────────────────
+# cert-manager self-signs this as a CA (isCA: true).
+# The resulting Secret (kind-local-ca-secret) must live in the cert-manager
+# namespace — ClusterIssuer CA secrets are always read from there.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kind-local-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: Kind Local CA
+  subject:
+    organizations:
+      - Kind Local CA
+    countries:
+      - US
+  duration: 43800h    # 5 years
+  renewBefore: 720h   # renew 30 days before expiry
+  secretName: kind-local-ca-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# ── 3. CA-backed ClusterIssuer ───────────────────────────────────────────────
+# Signs all *.kind.local certificates using the CA above.
+# After the kind-local-ca Certificate becomes Ready, this issuer is immediately usable.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: kind-local-ca-issuer
+spec:
+  ca:
+    secretName: kind-local-ca-secret
+
+---
+# ── 4. Wildcard TLS Certificate for *.kind.local ─────────────────────────────
+# cert-manager creates and auto-renews the wildcard-kind-local-tls Secret in the
+# default namespace. gateway-infra.yaml references this exact name + namespace,
+# so no gateway changes are required.
+#
+# Covers all services: vault.kind.local, keycloak.kind.local, team-a-webapp.kind.local, etc.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-kind-local-tls
+  namespace: default
+spec:
+  commonName: "*.kind.local"
+  dnsNames:
+    - "*.kind.local"
+    - "kind.local"
+  duration: 8760h     # 1 year
+  renewBefore: 720h   # renew 30 days before expiry (cert-manager handles this automatically)
+  secretName: wildcard-kind-local-tls
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  usages:
+    - server auth
+    - client auth
+  issuerRef:
+    name: kind-local-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

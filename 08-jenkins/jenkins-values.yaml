@@ -1,0 +1,446 @@
+# Jenkins Helm values — vault-keycloak-k8s-platform
+# Chart   : jenkins/jenkins 5.9.40  |  Jenkins LTS 2.568.1
+# Release : jenkins  |  Namespace: jenkins
+#
+# Key features:
+#   • Keycloak OIDC authentication (oic-auth plugin)
+#   • Role-based authorization (role-strategy plugin)
+#     - devops  → global admin (all folders/jobs)
+#     - team-a  → item-level access on team-a/.* only
+#     - team-b  → item-level access on team-b/.* only
+#   • Folder structure provisioned via JCasC + Job DSL:
+#     /devops/{k8s, terraform-module, terragrunt, vault, keycloak}
+#     /team-a/{ci, cd}/react-app
+#     /team-b/{ci, cd}/react-app
+#   • Kubernetes agent cloud (ephemeral pods)
+#   • SonarQube + DockerHub credentials injected from K8s Secrets
+#   • Gateway API HTTPRoute handles HTTPS (no nginx ingress needed)
+#
+# Install:
+#   helm repo add jenkins https://charts.jenkins.io && helm repo update
+#   helm install jenkins jenkins/jenkins \
+#     --namespace jenkins --create-namespace \
+#     --values 08-jenkins/jenkins-values.yaml \
+#     --version 5.9.40
+#
+# Upgrade:
+#   helm upgrade jenkins jenkins/jenkins \
+#     --namespace jenkins \
+#     --values 08-jenkins/jenkins-values.yaml \
+#     --version <NEW_VERSION>
+
+controller:
+  image:
+    registry: "docker.io"
+    repository: "jenkins/jenkins"
+    tag: "2.568.1-lts"
+    pullPolicy: "IfNotPresent"
+
+  # Local admin — bypasses Keycloak (for emergency access + setup script)
+  admin:
+    username: "admin"
+    password: "Admin@Jenkins2024!"
+
+  # No executor on the controller — all builds run on Kubernetes agent pods
+  numExecutors: 0
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+
+  # Skip setup wizard; suppress default CSP to allow SonarQube reports
+  javaOpts: "-Djenkins.install.runSetupWizard=false -Dhudson.model.DirectoryBrowserSupport.CSP="
+
+  # Jenkins external URL — MUST be set for OAuth redirect URIs to work correctly.
+  # Keycloak will redirect to <jenkinsUrl>/securityRealm/finishLogin after auth.
+  jenkinsUrl: "https://jenkins.kind.local"
+  jenkinsUriPrefix: "/"
+
+  # Credentials injected from Kubernetes Secrets (set by setup.sh)
+  containerEnv:
+    - name: DOCKERHUB_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: jenkins-credentials
+          key: DOCKERHUB_USERNAME
+    - name: DOCKERHUB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: jenkins-credentials
+          key: DOCKERHUB_PASSWORD
+    - name: NVD_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: jenkins-credentials
+          key: NVD_API_KEY
+    - name: SONARQUBE_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: sonarqube-token
+          key: token
+          optional: true
+
+  # ── Plugins ────────────────────────────────────────────────────────────────
+  # oic-auth    : Keycloak OIDC authentication
+  # role-strategy: folder-level RBAC
+  # cloudbees-folder: nested folder support
+  installPlugins:
+    - kubernetes:latest
+    - workflow-aggregator:latest
+    - git:latest
+    - configuration-as-code:latest
+    - job-dsl:latest
+    - docker-workflow:latest
+    - credentials:latest
+    - plain-credentials:latest
+    - pipeline-stage-view:latest
+    - github:latest
+    - sonar:latest
+    - dependency-check-jenkins-plugin:latest
+    - ws-cleanup:latest
+    - build-discarder:latest
+    - pipeline-utility-steps:latest
+    - ansicolor:latest
+    - oic-auth:latest
+    - role-strategy:latest
+    - cloudbees-folder:latest
+    - matrix-auth:latest
+
+  # Disable built-in ingress — external access is via Gateway API HTTPRoute
+  ingress:
+    enabled: false
+
+  # ── JCasC: Jenkins Configuration as Code ──────────────────────────────────
+  # defaultConfig: false → we own the full security + location config
+  JCasC:
+    defaultConfig: false
+    configScripts:
+
+      # ── 1. Jenkins core: location + authorization ─────────────────────────────
+      # NOTE: securityRealm (OIDC) is intentionally omitted from JCasC — it is
+      # configured post-install by setup.sh via the Jenkins API/CLI because the
+      # oic-auth plugin's JCasC schema varies significantly between plugin versions.
+      # Jenkins starts with local auth (admin/admin); OIDC is applied by setup.sh.
+      security: |
+        jenkins:
+          # ── Authentication: Keycloak OIDC (oic-auth v4.x) ─────────────────
+          # oic-auth v4.x JCasC schema (from /configuration-as-code/schema):
+          #   OicSecurityRealm: clientId, clientSecret, serverConfiguration,
+          #     userNameField, fullNameFieldName, emailFieldName, groupsFieldName,
+          #     disableSslVerification, logoutFromOpenidProvider, postLogoutRedirectUrl
+          #   OicServerWellKnownConfiguration (nested in serverConfiguration.wellKnown):
+          #     wellKnownOpenIDConfigurationUrl, scopesOverride
+          securityRealm:
+            oic:
+              clientId: "jenkins"
+              clientSecret: "Jenkins@Keycloak2024!"
+              serverConfiguration:
+                wellKnown:
+                  wellKnownOpenIDConfigurationUrl: "https://keycloak.kind.local/realms/kind/.well-known/openid-configuration"
+                  scopesOverride: "openid email profile"
+              userNameField: "preferred_username"
+              fullNameFieldName: "name"
+              emailFieldName: "email"
+              groupsFieldName: "groups"
+              disableSslVerification: true
+              logoutFromOpenidProvider: true
+              postLogoutRedirectUrl: "https://jenkins.kind.local"
+          authorizationStrategy:
+            roleBased:
+              roles:
+                global:
+                  - name: "devops-admin"
+                    description: "Full Jenkins administrator — devops group + local admin"
+                    permissions:
+                      - "Overall/Administer"
+                    entries:
+                      - group: "devops"
+                      - user: "admin"
+                  - name: "authenticated-read"
+                    description: "Base role — all authenticated users can log in"
+                    permissions:
+                      - "Overall/Read"
+                    entries:
+                      - group: "authenticated"
+                  - name: "anonymous-probe"
+                    description: "Allow /login page for health probes and unauthenticated access"
+                    permissions:
+                      - "Overall/Read"
+                    entries:
+                      - user: "anonymous"
+                items:
+                  - name: "team-a-developer"
+                    description: "Team A access — all jobs under team-a/ folder"
+                    pattern: "team-a.*"
+                    permissions:
+                      - "Job/Read"
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Workspace"
+                      - "Run/Replay"
+                      - "Run/Update"
+                      - "View/Read"
+                    entries:
+                      - group: "team-a"
+                  - name: "team-b-developer"
+                    description: "Team B access — all jobs under team-b/ folder"
+                    pattern: "team-b.*"
+                    permissions:
+                      - "Job/Read"
+                      - "Job/Build"
+                      - "Job/Cancel"
+                      - "Job/Workspace"
+                      - "Run/Replay"
+                      - "Run/Update"
+                      - "View/Read"
+                    entries:
+                      - group: "team-b"
+        security:
+          gitHostKeyVerificationConfiguration:
+            sshHostKeyVerificationStrategy: "noHostKeyVerificationStrategy"
+        unclassified:
+          location:
+            url: "https://jenkins.kind.local/"
+            adminAddress: ""
+
+      # ── 2. Kubernetes cloud for agent pods ──────────────────────────────────
+      kubernetes-cloud: |
+        jenkins:
+          clouds:
+            - kubernetes:
+                name: "kubernetes"
+                serverUrl: ""
+                namespace: "jenkins"
+                jenkinsUrl: "http://jenkins.jenkins.svc.cluster.local:8080"
+                jenkinsTunnel: "jenkins-agent.jenkins.svc.cluster.local:50000"
+                connectTimeout: 30
+                readTimeout: 30
+                containerCapStr: "10"
+                maxRequestsPerHostStr: "32"
+                retentionTimeout: 5
+                templates: []
+
+      # ── 3. Tool integrations (SonarQube + credentials) ──────────────────────
+      integrations: |
+        credentials:
+          system:
+            domainCredentials:
+              - credentials:
+                  - usernamePassword:
+                      id: "dockerhub"
+                      description: "DockerHub — amitactive2008"
+                      username: "${DOCKERHUB_USERNAME}"
+                      password: "${DOCKERHUB_PASSWORD}"
+                      scope: GLOBAL
+                  - string:
+                      id: "NVD_API_KEY"
+                      description: "NVD API Key for OWASP Dependency-Check"
+                      secret: "${NVD_API_KEY}"
+                      scope: GLOBAL
+                  - string:
+                      id: "sonarqube-token"
+                      description: "SonarQube global analysis token"
+                      secret: "${SONARQUBE_TOKEN}"
+                      scope: GLOBAL
+        unclassified:
+          sonarGlobalConfiguration:
+            buildWrapperEnabled: true
+            installations:
+              - name: "mysonarqube"
+                serverUrl: "http://sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
+                credentialsId: "sonarqube-token"
+
+      # ── 4. Folder structure + pipeline jobs via Job DSL ─────────────────────
+      # Provisions all folders and stub pipeline jobs.
+      # Jobs reference the 09-sample-app-react-and-nodejs/ Jenkinsfiles.
+      # devops items: restrict by admin permission (devops group is global admin)
+      # team-a/team-b items: provisioned here; RBAC controls who can access them.
+      jobs: |
+        jobs:
+          - script: |
+
+              // ── DevOps folder tree ───────────────────────────────────────
+              folder('devops') {
+                displayName('DevOps')
+                description('DevOps team pipelines — Full access for devops group only')
+              }
+              folder('devops/k8s') {
+                displayName('Kubernetes')
+                description('Kubernetes cluster management and deployment pipelines')
+              }
+              folder('devops/terraform-module') {
+                displayName('Terraform Modules')
+                description('Terraform module CI/CD pipelines')
+              }
+              folder('devops/terragrunt') {
+                displayName('Terragrunt')
+                description('Terragrunt deployment pipelines')
+              }
+              folder('devops/vault') {
+                displayName('Vault')
+                description('HashiCorp Vault configuration and policy pipelines')
+              }
+              folder('devops/keycloak') {
+                displayName('Keycloak')
+                description('Keycloak realm and client management pipelines')
+              }
+
+              // ── Team A folder tree ───────────────────────────────────────
+              folder('team-a') {
+                displayName('Team A')
+                description('Team A pipelines — accessible by team-a and devops groups')
+              }
+              folder('team-a/ci') {
+                displayName('CI')
+                description('Team A Continuous Integration pipelines')
+              }
+              folder('team-a/cd') {
+                displayName('CD')
+                description('Team A Continuous Deployment pipelines')
+              }
+
+              // team-a/ci/react-app: React frontend CI (gitleaks, SCA, SAST, docker image)
+              pipelineJob('team-a/ci/react-app') {
+                displayName('React App CI')
+                description('''CI pipeline for team-a React frontend.
+                  Stages: Checkout → Compile → Gitleaks → SCA → SAST → Quality Gate → Docker → Trivy
+                  Agent: jenkins/Jenkins-agent.yaml (nodejs, sonar, trivy, docker-cli containers)''')
+                logRotator { numToKeep(10) }
+                definition {
+                  cpsScm {
+                    scm {
+                      git {
+                        remote {
+                          url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git')
+                        }
+                        branches('*/main', '*/dev')
+                      }
+                    }
+                    scriptPath('client/Jenkinsfile')
+                    lightweight(true)
+                  }
+                }
+              }
+
+              // team-a/cd/react-app: React frontend CD (deploy to Kind cluster)
+              pipelineJob('team-a/cd/react-app') {
+                displayName('React App CD')
+                description('''CD pipeline for team-a React frontend.
+                  Deploys the client image built by team-a/ci/react-app to the Kind cluster.
+                  Agent: jenkins/Jenkins-agent-cd.yaml (kubectl container)''')
+                parameters {
+                  stringParam('CLIENT_IMAGE_TAG', 'latest', 'Client Docker image tag from CI build')
+                  stringParam('API_IMAGE_TAG',    'latest', 'API Docker image tag (if co-deploying)')
+                }
+                logRotator { numToKeep(20) }
+                definition {
+                  cpsScm {
+                    scm {
+                      git {
+                        remote {
+                          url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git')
+                        }
+                        branches('*/main')
+                      }
+                    }
+                    scriptPath('jenkins/Jenkinsfile-cd-local')
+                    lightweight(true)
+                  }
+                }
+              }
+
+              // ── Team B folder tree ───────────────────────────────────────
+              folder('team-b') {
+                displayName('Team B')
+                description('Team B pipelines — accessible by team-b and devops groups')
+              }
+              folder('team-b/ci') {
+                displayName('CI')
+                description('Team B Continuous Integration pipelines')
+              }
+              folder('team-b/cd') {
+                displayName('CD')
+                description('Team B Continuous Deployment pipelines')
+              }
+
+              // team-b/ci/react-app
+              pipelineJob('team-b/ci/react-app') {
+                displayName('React App CI')
+                description('''CI pipeline for team-b React frontend.
+                  Stages: Checkout → Compile → Gitleaks → SCA → SAST → Quality Gate → Docker → Trivy''')
+                logRotator { numToKeep(10) }
+                definition {
+                  cpsScm {
+                    scm {
+                      git {
+                        remote {
+                          url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git')
+                        }
+                        branches('*/main', '*/dev')
+                      }
+                    }
+                    scriptPath('client/Jenkinsfile')
+                    lightweight(true)
+                  }
+                }
+              }
+
+              // team-b/cd/react-app
+              pipelineJob('team-b/cd/react-app') {
+                displayName('React App CD')
+                description('CD pipeline for team-b React frontend deployment')
+                parameters {
+                  stringParam('CLIENT_IMAGE_TAG', 'latest', 'Client Docker image tag')
+                  stringParam('API_IMAGE_TAG',    'latest', 'API Docker image tag')
+                }
+                logRotator { numToKeep(20) }
+                definition {
+                  cpsScm {
+                    scm {
+                      git {
+                        remote {
+                          url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git')
+                        }
+                        branches('*/main')
+                      }
+                    }
+                    scriptPath('jenkins/Jenkinsfile-cd-local')
+                    lightweight(true)
+                  }
+                }
+              }
+
+# ── Persistent storage ────────────────────────────────────────────────────────
+persistence:
+  enabled: true
+  storageClass: "standard"
+  size: "10Gi"
+
+# ── Service Account + RBAC ────────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  name: "jenkins"
+
+rbac:
+  create: true
+  readSecrets: true
+
+# ── Agent pods ────────────────────────────────────────────────────────────────
+agent:
+  enabled: true
+  namespace: "jenkins"
+  # Default agent image — overridden per-job via yamlFile
+  image:
+    repository: "jenkins/inbound-agent"
+    tag: "latest"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"

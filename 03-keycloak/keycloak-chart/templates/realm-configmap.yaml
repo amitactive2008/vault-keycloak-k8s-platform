@@ -1,0 +1,15 @@
+{{- if .Values.realm.importEnabled }}
+# ConfigMap that mounts the realm JSON at /opt/keycloak/data/import/
+# Keycloak reads every *.json file in that directory on startup when
+# started with the --import-realm flag.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm-import
+  namespace: {{ include "keycloak.namespace" . }}
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+data:
+  {{ .Values.realm.fileName }}: |
+    {{- .Files.Get .Values.realm.fileName | nindent 4 }}
+{{- end }}

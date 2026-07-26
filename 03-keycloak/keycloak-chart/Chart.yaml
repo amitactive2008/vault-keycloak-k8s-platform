@@ -1,0 +1,17 @@
+apiVersion: v2
+name: keycloak
+description: >
+  Keycloak 26.x identity provider with a bundled PostgreSQL 17 backend.
+  Designed for a local kind cluster. Includes an nginx Ingress and optional
+  realm-import ConfigMap.
+type: application
+version: 1.0.0
+appVersion: "26.3.3"
+keywords:
+  - keycloak
+  - oidc
+  - identity
+  - kind
+home: https://www.keycloak.org
+sources:
+  - https://github.com/keycloak/keycloak

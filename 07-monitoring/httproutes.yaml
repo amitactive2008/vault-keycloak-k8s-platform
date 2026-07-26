@@ -1,0 +1,174 @@
+# HTTPRoutes for the monitoring stack
+# Namespace: monitoring  |  Parent: native-gateway (default namespace)
+# Covers: Prometheus, Grafana, Alertmanager, Blackbox Exporter
+#
+# Apply:
+#   kubectl apply -f httproutes.yaml
+#
+# All routes follow the same pattern as 02-vault/vault-httproute.yaml:
+#   - HTTPS route: *.kind.local → monitoring service (TLS terminated at gateway)
+#   - HTTP redirect: 301 http:// → https://
+
+# ── Prometheus ────────────────────────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: https
+  hostnames:
+  - "prometheus.kind.local"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: kube-prom-kube-prometheus-prometheus
+      port: 9090
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: prometheus-http-redirect
+  namespace: monitoring
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: http
+  hostnames:
+  - "prometheus.kind.local"
+  rules:
+  - filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        statusCode: 301
+---
+# ── Grafana ───────────────────────────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: https
+  hostnames:
+  - "grafana.kind.local"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: kube-prom-grafana
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana-http-redirect
+  namespace: monitoring
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: http
+  hostnames:
+  - "grafana.kind.local"
+  rules:
+  - filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        statusCode: 301
+---
+# ── Alertmanager ──────────────────────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: https
+  hostnames:
+  - "alertmanager.kind.local"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: kube-prom-kube-prometheus-alertmanager
+      port: 9093
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: alertmanager-http-redirect
+  namespace: monitoring
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: http
+  hostnames:
+  - "alertmanager.kind.local"
+  rules:
+  - filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        statusCode: 301
+---
+# ── Blackbox Exporter ─────────────────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: https
+  hostnames:
+  - "blackbox-exporter.kind.local"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: blackbox-prometheus-blackbox-exporter
+      port: 9115
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: blackbox-exporter-http-redirect
+  namespace: monitoring
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: http
+  hostnames:
+  - "blackbox-exporter.kind.local"
+  rules:
+  - filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        statusCode: 301

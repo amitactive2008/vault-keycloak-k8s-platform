@@ -1,0 +1,54 @@
+# Creates the team-b namespace and binds the Keycloak 'team-b' group to admin
+# within that namespace only.  team-b users have NO access to other namespaces.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-b
+  labels:
+    team: team-b
+    app.kubernetes.io/managed-by: keycloak-k8s-oidc
+---
+# Full admin within team-b namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keycloak-team-b-admin
+  namespace: team-b
+  labels:
+    app.kubernetes.io/managed-by: keycloak-k8s-oidc
+subjects:
+  - kind: Group
+    name: team-b                          # matches JWT groups claim value
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: admin                             # built-in: full CRUD in namespace
+  apiGroup: rbac.authorization.k8s.io
+---
+# Allow team-b to list/get their own namespace (so kubectl get ns works)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: keycloak-team-b-ns-viewer
+  labels:
+    app.kubernetes.io/managed-by: keycloak-k8s-oidc
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+    resourceNames: ["team-b"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: keycloak-team-b-ns-viewer
+  labels:
+    app.kubernetes.io/managed-by: keycloak-k8s-oidc
+subjects:
+  - kind: Group
+    name: team-b
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: keycloak-team-b-ns-viewer
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,34 @@
+# Grant the Vault SA the RBAC permissions required by the Kubernetes secrets
+# engine to generate short-lived ServiceAccount tokens via the TokenRequest API.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-k8s-secrets-engine
+  labels:
+    {{- include "webapp.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts", "namespaces"]
+    verbs: ["get"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "clusterroles", "rolebindings", "clusterrolebindings"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-k8s-secrets-engine
+  labels:
+    {{- include "webapp.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: vault           # Vault Helm chart creates this SA in the vault namespace
+    namespace: vault
+roleRef:
+  kind: ClusterRole
+  name: vault-k8s-secrets-engine
+  apiGroup: rbac.authorization.k8s.io

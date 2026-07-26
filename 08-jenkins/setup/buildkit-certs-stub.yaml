@@ -1,0 +1,9 @@
+# Stub secret satisfying the jenkins/Jenkins-agent.yaml volume reference.
+# The original agent spec mounts buildkit-client-certs for TLS builds.
+# In local mode buildkitd runs without TLS, so this secret is intentionally empty.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: buildkit-client-certs
+type: Opaque
+data: {}

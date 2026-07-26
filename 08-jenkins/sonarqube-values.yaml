@@ -1,0 +1,123 @@
+# SonarQube Helm values — vault-keycloak-k8s-platform
+# Chart   : sonarqube/sonarqube 2026.3.1  (Community Edition)
+# Release : sonarqube  |  Namespace: sonarqube
+#
+# Key features:
+#   • Community Edition (free, open-source)
+#   • Keycloak OIDC authentication via sonar-auth-oidc plugin
+#     (settings configured post-install by setup.sh via API)
+#   • cert-manager CA cert trusted in JVM so HTTPS → Keycloak works
+#   • Gateway API HTTPRoute handles HTTPS (no nginx ingress)
+#   • Persistent storage for analysis data
+#
+# The sonar-auth-oidc plugin is downloaded at pod startup.
+# OIDC settings (client_id, client_secret, issuerUri, groups sync)
+# are applied by setup.sh via the SonarQube Settings API after startup.
+#
+# Install:
+#   helm repo add sonarqube https://SonarSource.github.io/helm-chart-sonarqube
+#   helm repo update
+#   helm install sonarqube sonarqube/sonarqube \
+#     --namespace sonarqube --create-namespace \
+#     --values 08-jenkins/sonarqube-values.yaml \
+#     --version 2026.3.1
+#
+# Upgrade:
+#   helm upgrade sonarqube sonarqube/sonarqube \
+#     --namespace sonarqube \
+#     --values 08-jenkins/sonarqube-values.yaml \
+#     --version <NEW_VERSION>
+
+# ── Edition ───────────────────────────────────────────────────────────────────
+community:
+  enabled: true
+
+# ── Admin credentials ─────────────────────────────────────────────────────────
+# Initial admin: admin / admin (Keycloak SSO becomes primary auth after setup)
+account:
+  adminPassword: "admin"
+  currentAdminPassword: "admin"
+
+# ── Security passcode (for liveness probe) ────────────────────────────────────
+monitoringPasscode: "localpasscode123"
+
+# ── CA cert trust for Keycloak HTTPS ──────────────────────────────────────────
+# SonarQube → Keycloak HTTPS uses the cert-manager CA.
+# The chart's caCerts feature adds the cert to the JVM trust store automatically.
+# The Secret 'kind-local-ca-cert' is created by setup.sh in the sonarqube namespace.
+caCerts:
+  enabled: true
+  secret: kind-local-ca-cert
+
+# ── OIDC plugin ───────────────────────────────────────────────────────────────
+# authoidc v3.0.0 — OpenID Connect Authentication for SonarQube
+# Repository: https://github.com/sonar-auth-oidc/sonar-auth-oidc
+# Compatible with SonarQube Community 2026.x / SonarQube Server 25.x+
+#
+# The plugin is installed from the SonarQube marketplace at pod startup.
+# After first install it is stored in the PVC (extensions/plugins/) and
+# persists across restarts without re-downloading.
+#
+# OIDC settings (clientId, clientSecret, issuerUri, etc.) are applied by
+# setup.sh via the SonarQube Settings API after the pod is Ready.
+# The plugin risk consent (sonar.plugins.risk.consent=ACCEPTED) must be
+# set before the plugin can be installed — setup.sh handles this automatically.
+plugins:
+  install:
+    - "https://github.com/sonar-auth-oidc/sonar-auth-oidc/releases/download/v3.0.0/sonar-auth-oidc-plugin-3.0.0.jar"
+
+# ── SonarQube properties ───────────────────────────────────────────────────────
+sonarProperties:
+  sonar.core.serverBaseURL: "https://sonarqube.kind.local"
+  # Accept plugin risk consent so setup.sh can install the authoidc plugin
+  sonar.plugins.risk.consent: "ACCEPTED"
+
+# ── SonarQube base URL ────────────────────────────────────────────────────────
+# Must match what users see in the browser — needed for OIDC redirect URIs.
+# sonar.core.serverBaseURL and sonar.plugins.risk.consent are now in sonarProperties above.
+
+# ── Persistent storage ────────────────────────────────────────────────────────
+persistence:
+  enabled: true
+  storageClass: "standard"
+  size: 10Gi
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: "200m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "2Gi"
+
+# ── Readiness / liveness timings (SonarQube is slow to start) ─────────────────
+startupProbe:
+  failureThreshold: 48       # up to 4 min before giving up
+  initialDelaySeconds: 30
+  periodSeconds: 5
+
+readinessProbe:
+  initialDelaySeconds: 60
+  failureThreshold: 6
+  periodSeconds: 10
+  timeoutSeconds: 5
+
+livenessProbe:
+  initialDelaySeconds: 60
+  failureThreshold: 6
+  periodSeconds: 10
+  timeoutSeconds: 5
+
+# ── Disable built-in ingress — Gateway API HTTPRoute handles external access ───
+ingress:
+  enabled: false
+
+service:
+  type: ClusterIP
+  externalPort: 9000
+  internalPort: 9000
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+logging:
+  jsonOutput: false

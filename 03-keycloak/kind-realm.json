@@ -1,0 +1,147 @@
+{
+  "realm": "kind",
+  "enabled": true,
+  "displayName": "Kind Realm",
+  "displayNameHtml": "<b>Kind</b> Realm",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 30,
+  "passwordPolicy": "length(8)",
+  "defaultRoles": ["offline_access", "uma_authorization"],
+  "groups": [
+    {
+      "name": "devops",
+      "path": "/devops",
+      "subGroups": [],
+      "realmRoles": [],
+      "clientRoles": {
+        "realm-management": [
+          "realm-admin"
+        ]
+      }
+    },
+    {
+      "name": "team-a",
+      "path": "/team-a",
+      "subGroups": [],
+      "realmRoles": [],
+      "clientRoles": {}
+    },
+    {
+      "name": "team-b",
+      "path": "/team-b",
+      "subGroups": [],
+      "realmRoles": [],
+      "clientRoles": {}
+    }
+  ],
+  "users": [
+    {
+      "username": "devops-user-1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "DevOps",
+      "lastName": "User1",
+      "email": "devops-user-1@kind.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": ["/devops"]
+    },
+    {
+      "username": "devops-user-2",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "DevOps",
+      "lastName": "User2",
+      "email": "devops-user-2@kind.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": ["/devops"]
+    },
+    {
+      "username": "team-a-user-1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "TeamA",
+      "lastName": "User1",
+      "email": "team-a-user-1@kind.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": ["/team-a"]
+    },
+    {
+      "username": "team-a-user-2",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "TeamA",
+      "lastName": "User2",
+      "email": "team-a-user-2@kind.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": ["/team-a"]
+    },
+    {
+      "username": "team-b-user-1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "TeamB",
+      "lastName": "User1",
+      "email": "team-b-user-1@kind.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": ["/team-b"]
+    },
+    {
+      "username": "team-b-user-2",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "TeamB",
+      "lastName": "User2",
+      "email": "team-b-user-2@kind.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": ["/team-b"]
+    }
+  ]
+}

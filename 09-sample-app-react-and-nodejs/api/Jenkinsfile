@@ -1,0 +1,137 @@
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile 'jenkins/Jenkins-agent.yaml'
+      defaultContainer 'jnlp'
+    }
+  }
+
+  environment {
+    REGISTRY = "amitactive2008"
+    APP = "api"
+    registryCredential = 'dockerhub'
+  }
+
+  stages {
+
+    stage('Stage 1: Checkout') {
+      steps {
+        echo "Checking out code..."
+        git branch: 'dev', url: 'https://github.com/amitactive2008/DevSecOps-Mega-Project.git'
+      }
+    }
+
+    stage('Stage 2: Compilation') {
+      steps {
+        echo "Checking JavaScript syntax..."
+        container('nodejs') {
+          dir('api') {
+            sh 'find . -name "*.js" -exec node --check {} +'
+          }
+        }
+      }
+    }
+
+    stage('Stage 3: Gitleaks Scan') {
+      steps {
+        echo "Scanning repo for secrets..."
+        container('gitleaks') {
+          sh 'gitleaks detect --source ./api --report-format=json --report-path=/home/jenkins/agent/workspace/gitleaks-report.json || true'
+          echo "=== Gitleaks Report ==="
+          sh 'cat /home/jenkins/agent/workspace/gitleaks-report.json'
+        }
+      }
+    }
+   
+
+    stage('Stage 4: SCA') {
+      steps {
+        echo "Running Dependency Check..."
+        container('dependency-check') {
+          dir('api') {
+            withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
+              sh '''
+                NVD_OPTS=""
+                if [ -n "$NVD_KEY" ] && [ "$NVD_KEY" != "placeholder" ]; then
+                  NVD_OPTS="--nvdApiKey $NVD_KEY"
+                fi
+                /usr/share/dependency-check/bin/dependency-check.sh \
+                  --scan . \
+                  --project backend-nodejs \
+                  --data /dependency-check-data \
+                  $NVD_OPTS \
+                  --out reports \
+                  --format HTML \
+                  --format JSON \
+                  --failOnCVSS 11 || true
+              '''
+            }
+          }
+        }
+      }
+    }
+
+    stage('Stage 5: SAST') {
+      steps {
+        echo "Running SonarQube..."
+        container('sonar') {
+        withSonarQubeEnv('mysonarqube') {
+          sh '''
+            sonar-scanner \
+              -Dsonar.projectKey=backend-nodejs \
+              -Dsonar.sources=api/ \
+              -Dsonar.javascript.lcov.reportPaths=api/coverage/lcov.info \
+              -Dsonar.dependencyCheck.jsonReportPath=api/reports/dependency-check-report.json \
+              -Dsonar.dependencyCheck.htmlReportPath=api/reports/dependency-check-report.html
+          '''
+        }
+      }
+    }
+  }
+
+    stage('Stage 6: Quality Gate') {
+      steps {
+        script {
+          timeout(time: 1, unit: 'MINUTES') {
+            def qg = waitForQualityGate()
+            echo "Quality Gate status: ${qg.status}"
+          }
+        }
+      }
+    }
+
+    stage('Stage 7: Docker Image') {
+      steps {
+        echo "Building Docker Image..."
+        container('docker-cli') {
+          withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+            sh 'echo "$PASS" | docker login -u "$USER" --password-stdin'
+            sh 'make api VERSION=${BUILD_NUMBER}'
+          }
+        }
+      }
+    }
+
+    stage('Stage 8: Trivy Image Scan') {
+      steps {
+        echo "Scanning Docker Image for vulnerabilities..."
+        container('trivy') {
+          sh 'trivy image --format table -o api-image-report.html ${REGISTRY}/${APP}:${BUILD_NUMBER}'
+          sh 'trivy image ${REGISTRY}/${APP}:${BUILD_NUMBER} > trivyresults.txt'
+        }
+      }
+    }
+
+    stage('Stage 9: Deploy to local') {
+      steps {
+        echo "Triggering CD pipeline to deploy api:${BUILD_NUMBER} to local Kind cluster..."
+        build job: 'deploy-to-local',
+          parameters: [
+            string(name: 'API_IMAGE_TAG', value: "${BUILD_NUMBER}")
+          ],
+          wait: false
+      }
+    }
+
+  } // closes stages
+} // closes pipeline

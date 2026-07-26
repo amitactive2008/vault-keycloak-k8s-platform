@@ -1,0 +1,45 @@
+# HTTPRoute for vault.kind.local
+# Routes HTTPS traffic from the shared Envoy Gateway (default namespace)
+# to the vault-active service (always the Raft leader) on port 8200.
+# TLS is terminated at the gateway using the wildcard *.kind.local cert.
+# Vault itself listens on plain HTTP (global.tlsDisable: true in vault.yaml).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vault
+  namespace: vault
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: https
+  hostnames:
+  - "vault.kind.local"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: vault-active
+      port: 8200
+---
+# HTTP -> HTTPS redirect for vault.kind.local
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vault-http-redirect
+  namespace: vault
+spec:
+  parentRefs:
+  - name: native-gateway
+    namespace: default
+    sectionName: http
+  hostnames:
+  - "vault.kind.local"
+  rules:
+  - filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        statusCode: 301

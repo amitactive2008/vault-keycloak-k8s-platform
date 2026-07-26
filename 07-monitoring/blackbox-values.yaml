@@ -1,0 +1,91 @@
+# Prometheus Blackbox Exporter Helm values
+# Chart   : prometheus-community/prometheus-blackbox-exporter 11.15.1
+# App     : v0.28.0
+# Release : blackbox  |  Namespace: monitoring
+#
+# Install:
+#   helm install blackbox prometheus-community/prometheus-blackbox-exporter \
+#     --namespace monitoring \
+#     --values blackbox-values.yaml \
+#     --version 11.15.1
+#
+# The blackbox exporter exposes a /probe endpoint that Prometheus uses
+# to probe external targets (HTTP, TCP, ICMP, DNS). Prometheus scrapes
+# the blackbox pod directly, passing the target URL as a query parameter.
+# See additionalScrapeConfigs in values.yaml for the scrape configuration.
+
+# ── Probe modules ─────────────────────────────────────────────────────────────
+config:
+  modules:
+    # HTTP 2xx probe — TLS verification SKIPPED for self-signed cert-manager CA
+    # Used to probe all *.kind.local HTTPS endpoints from inside the cluster
+    http_2xx_insecure:
+      prober: http
+      timeout: 15s
+      http:
+        valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+        valid_status_codes: []       # defaults to 2xx
+        method: GET
+        no_follow_redirects: false
+        fail_if_ssl: false
+        fail_if_not_ssl: false
+        preferred_ip_protocol: ip4
+        tls_config:
+          insecure_skip_verify: true
+
+    # Standard HTTP 2xx probe (with TLS verification — for public endpoints)
+    http_2xx:
+      prober: http
+      timeout: 15s
+      http:
+        valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+        valid_status_codes: []
+        method: GET
+        preferred_ip_protocol: ip4
+
+    # TCP probe — connection test only
+    tcp_connect:
+      prober: tcp
+      timeout: 10s
+
+    # ICMP ping probe
+    icmp:
+      prober: icmp
+      timeout: 10s
+      icmp:
+        preferred_ip_protocol: ip4
+
+# ── Service ───────────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 9115
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 20m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+# ── Expose /metrics for Prometheus self-scrape (ServiceMonitor) ───────────────
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+  interval: 30s
+  scrapeTimeout: 15s
+
+# ── Pod security ──────────────────────────────────────────────────────────────
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534   # nobody
+  fsGroup: 65534
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+    # ICMP probes need NET_RAW — remove if not using icmp module
+    add: [NET_RAW]

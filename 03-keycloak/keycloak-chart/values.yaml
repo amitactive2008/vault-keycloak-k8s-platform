@@ -1,0 +1,132 @@
+# ============================================================
+# Default values for the Keycloak chart.
+# Override via -f ../values.yaml at install time.
+# ============================================================
+
+namespace: keycloak
+
+# ── Keycloak ──────────────────────────────────────────────────
+keycloak:
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: "26.3.3"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  # External hostname Keycloak is reachable at (used by Ingress and KC_HOSTNAME_URL)
+  hostname: keycloak.local
+
+  # Admin bootstrap credentials (Keycloak 26+)
+  auth:
+    adminUsername: admin
+    adminPassword: "Admin@Keycloak2024!"
+
+  # Keycloak runtime configuration (KC_* env vars)
+  config:
+    httpEnabled: "true"
+    proxyHeaders: xforwarded
+    hostnameStrict: "false"
+    # local = no distributed-cache overhead for a single replica.
+    # Switch to "ispn" for 2+ replicas (HA).
+    cache: local
+    # Disable XA transactions for single-DB deployments.
+    transactionXaEnabled: "false"
+    # WARN reduces log I/O by ~80% vs INFO.
+    logLevel: WARN
+    healthEnabled: "true"
+    metricsEnabled: "true"
+
+  # Database connection pool
+  dbPool:
+    initialSize: "5"
+    minSize: "5"
+    maxSize: "20"
+
+  # JVM flags — G1GC tuned for low-latency request handling
+  jvmOpts: >-
+    -XX:+UseG1GC
+    -XX:+UseContainerSupport
+    -XX:MinRAMPercentage=50.0
+    -XX:MaxRAMPercentage=75.0
+    -XX:MaxGCPauseMillis=200
+    -XX:G1ReservePercent=15
+    -XX:+DisableExplicitGC
+    -Djava.net.preferIPv4Stack=true
+
+  resources:
+    requests:
+      cpu: "1000m"    # JIT compilation needs unthrottled CPU bursts
+      memory: 1536Mi
+    limits:
+      cpu: "2000m"    # Allow up to 2 CPUs for GC / JIT peaks
+      memory: 3Gi     # 75% of 3 Gi ≈ 2.3 Gi heap via MaxRAMPercentage
+
+  # Startup probe — Keycloak can take 90-120 s on first boot (DB schema creation)
+  startupProbe:
+    path: /health/ready
+    port: 9000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    failureThreshold: 60   # 30 + 60×10 = 630 s max total wait
+
+  livenessProbe:
+    path: /health/live
+    port: 9000
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 6
+
+  readinessProbe:
+    path: /health/ready
+    port: 9000
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+
+# ── PostgreSQL ────────────────────────────────────────────────
+postgresql:
+  image:
+    repository: docker.io/library/postgres
+    tag: "17"
+    pullPolicy: IfNotPresent
+
+  auth:
+    username: keycloak
+    password: "Keycloak@2024!"
+    database: keycloak
+
+  storage:
+    size: 4Gi
+    # storageClassName: ""    # uncomment to specify a storage class
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── Realm import ──────────────────────────────────────────────
+realm:
+  # When true, mounts kind-realm.json (from the chart root) as a ConfigMap
+  # and Keycloak imports it on first boot via --import-realm.
+  importEnabled: true
+  # File name inside the chart root to import. Change if you have a custom JSON.
+  fileName: kind-realm.json
+
+# ── Ingress ───────────────────────────────────────────────────
+ingress:
+  enabled: true
+  hostname: keycloak.kind.local
+  # TLS secret created by the k8s-oidc/setup.sh or the CA steps in 02-vault.
+  tlsSecretName: keycloak-local-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
