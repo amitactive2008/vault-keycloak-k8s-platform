@@ -1,0 +1,83 @@
+# ============================================================
+# values.yaml — User-facing overrides for the ingress-nginx chart.
+#
+# Edit this file to customise the installation for your cluster.
+# Full list of available values is in ./ingress-nginx/values.yaml.
+#
+# Install:
+#   helm install ingress-nginx ./ingress-nginx \
+#     -f ./values.yaml \
+#     --namespace ingress-nginx --create-namespace
+#
+# Upgrade:
+#   helm upgrade ingress-nginx ./ingress-nginx \
+#     -f ./values.yaml \
+#     --namespace ingress-nginx
+#
+# Dry-run / template preview:
+#   helm template ingress-nginx ./ingress-nginx \
+#     -f ./values.yaml \
+#     --namespace ingress-nginx
+#
+# Uninstall:
+#   helm uninstall ingress-nginx --namespace ingress-nginx
+# ============================================================
+
+# ── Namespace ─────────────────────────────────────────────────
+namespace: ingress-nginx
+
+# ── Controller ────────────────────────────────────────────────
+controller:
+  replicaCount: 1
+
+  image:
+    repository: registry.k8s.io/ingress-nginx/controller
+    tag: "v1.15.1"
+    pullPolicy: IfNotPresent
+
+  # nginx ConfigMap settings
+  config:
+    # Required for configuration-snippet / server-snippet annotations.
+    allowSnippetAnnotations: "true"
+    # Keep at 1 under Podman to avoid pids-limit EAGAIN failures on kind.
+    workerProcesses: "1"
+
+  service:
+    type: LoadBalancer          # NodePort is an alternative for bare-metal
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 250Mi
+
+  # ── kind-specific: pin controller to control-plane node ────
+  # Only the control-plane node binds host ports 80/443 in a kind cluster.
+  # Change `kubernetes.io/hostname` to match your control-plane node name.
+  # Run `kubectl get nodes` to find the correct value.
+  nodeSelector:
+    kubernetes.io/os: linux
+    kubernetes.io/hostname: vault-control-plane
+
+  tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/master
+      operator: Equal
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/control-plane
+      operator: Equal
+
+  terminationGracePeriodSeconds: 0
+
+# ── Admission Webhook ─────────────────────────────────────────
+admissionWebhooks:
+  enabled: true
+  failurePolicy: Fail
+  image:
+    repository: registry.k8s.io/ingress-nginx/kube-webhook-certgen
+    tag: "v1.6.9"
+    pullPolicy: IfNotPresent
+
+# ── IngressClass ──────────────────────────────────────────────
+ingressClass:
+  name: nginx
+  controller: k8s.io/ingress-nginx

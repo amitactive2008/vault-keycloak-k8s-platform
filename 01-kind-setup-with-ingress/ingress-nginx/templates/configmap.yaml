@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingress-nginx-controller
+  namespace: {{ include "ingress-nginx.namespace" . }}
+  labels:
+    {{- include "ingress-nginx.controller.labels" . | nindent 4 }}
+data:
+  # Enables nginx.ingress.kubernetes.io/configuration-snippet and server-snippet
+  # annotations on Ingress objects. Required for proxy_hide_header and custom
+  # location-level nginx directives.
+  # NOTE: defaults to "false" in nginx-ingress >= 1.9; enable only in trusted clusters.
+  allow-snippet-annotations: {{ .Values.controller.config.allowSnippetAnnotations | quote }}
+  # Limit nginx worker processes to avoid pthread_create() EAGAIN failures
+  # under Podman's default pids-limit on kind clusters.
+  worker-processes: {{ .Values.controller.config.workerProcesses | quote }}
+  {{- range $key, $value := .Values.controller.config.extra }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
