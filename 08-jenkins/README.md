@@ -4,6 +4,57 @@ CI/CD platform and code quality gateway on the kind cluster, authenticated via *
 
 ---
 
+## Configuration split — why it matters
+
+Jenkins configuration is intentionally split into **two separate files** with different update workflows:
+
+| File | What it contains | How to update | Restart required? |
+|---|---|---|---|
+| `jenkins-values.yaml` | Security realm (OIC/Keycloak), authorization (role-strategy), Kubernetes cloud, plugins, credentials | `helm upgrade` + pod restart | **Yes** — but these rarely change |
+| **`jenkins-jobs.yaml`** | All folder and pipeline job definitions | `kubectl apply` OR `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
+
+### How hot-reload works
+
+The Jenkins pod runs two containers:
+- `jenkins` — the main server
+- `config-reload` — a sidecar (`kiwigrid/k8s-sidecar`) that watches Kubernetes
+
+```
+Edit jenkins-jobs.yaml
+        │
+        ▼
+kubectl apply -f jenkins-jobs.yaml
+        │  (updates ConfigMap with label: jenkins-jenkins-config=true)
+        ▼
+config-reload sidecar detects ConfigMap change
+        │  copies jobs.yaml → /var/jenkins_home/casc_configs/jobs.yaml
+        │  POSTs → http://localhost:8080/reload-configuration-as-code/
+        ▼
+Jenkins reloads JCasC in-place
+        │  creates/updates folder and job definitions
+        ▼
+Done in ~15 seconds — NO RESTART ✓
+```
+
+### When to use each update method
+
+```bash
+# Job added / modified / deleted → NO restart
+vim 08-jenkins/jenkins-jobs.yaml
+kubectl apply -f 08-jenkins/jenkins-jobs.yaml
+# OR: cd 08-jenkins && ./reload-jobs.sh [--wait]
+
+# Security, auth, plugins changed → restart required (rarely)
+vim 08-jenkins/jenkins-values.yaml
+helm upgrade jenkins jenkins/jenkins \
+  --namespace jenkins \
+  --values 08-jenkins/jenkins-values.yaml \
+  --version 5.9.40
+kubectl delete pod jenkins-0 -n jenkins
+```
+
+---
+
 ## Architecture
 
 ```
@@ -154,6 +205,47 @@ The script is **idempotent** — safe to re-run. It:
 9. Waits for readiness (up to 10 minutes for plugin downloads)
 10. Configures SonarQube via API: OIDC, groups, projects, permissions
 11. Generates SonarQube analysis token → stored as `sonarqube-token` Secret in `jenkins` namespace
+
+### Step 4 — Apply job definitions (NO restart needed)
+
+Job definitions are stored in `jenkins-jobs.yaml` (separate from Helm values) and applied independently:
+
+```bash
+kubectl apply -f 08-jenkins/jenkins-jobs.yaml
+```
+
+The `config-reload` sidecar detects the ConfigMap change and reloads JCasC in ~15 seconds.  
+All folders and pipeline jobs appear in Jenkins without any pod restart.
+
+---
+
+## Managing jobs (no restart workflow)
+
+This is the everyday workflow for adding, modifying, or removing Jenkins jobs:
+
+```bash
+# 1. Edit job definitions
+vim 08-jenkins/jenkins-jobs.yaml
+
+# 2. Apply — sidecar auto-reloads JCasC within 15 seconds
+kubectl apply -f 08-jenkins/jenkins-jobs.yaml
+
+# OR use the helper script (validates YAML, shows job list after reload)
+cd 08-jenkins && ./reload-jobs.sh
+
+# To wait for confirmation the reload completed:
+./reload-jobs.sh --wait
+```
+
+### What triggers each update method
+
+| Change type | File to edit | Update command | Restart? |
+|---|---|---|---|
+| Add/modify/delete a job or folder | `jenkins-jobs.yaml` | `kubectl apply` | No |
+| Change security/auth (OIC config) | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
+| Add/remove a plugin | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
+| Change Kubernetes cloud config | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
+| Change credentials/SonarQube config | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
 
 ---
 
