@@ -1,0 +1,104 @@
+// ============================================================
+// CD Pipeline — Sample React App (team-b): Node.js API
+//
+// Jenkins folder : team-b/sample-react-app/api/cd
+// Triggered by   : team-b/sample-react-app/api/ci  (passes IMAGE_TAG)
+// Namespace      : team-b
+//
+// Stages:
+//   1. Checkout    — get K8s manifests from SCM
+//   2. Apply       — kubectl apply kubernetes/ to team-b
+//   3. Update Tag  — kubectl set image → new team-b-* tag
+//   4. Rollout     — wait for deployment health
+//   5. Smoke Test  — /live + /health endpoints
+// ============================================================
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile '08-jenkins/Jenkins-agent-cd.yaml'
+      defaultContainer 'kubectl'
+    }
+  }
+
+  parameters {
+    string(name: 'IMAGE_TAG', defaultValue: 'team-b-latest',
+           description: 'Docker image tag (e.g. team-b-42 from API CI build)')
+  }
+
+  environment {
+    REGISTRY   = "amitactive2008"
+    IMAGE_NAME = "sample-react-app-api"
+    NAMESPACE  = "team-b"
+    DEPLOY     = "sample-react-app-api"
+    MANIFESTS  = "10-sample-react-app-team-b/kubernetes"
+  }
+
+  options {
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 15, unit: 'MINUTES')
+  }
+
+  stages {
+
+    stage('Stage 1: Checkout') {
+      steps {
+        checkout scm
+        sh 'git log --oneline -3'
+      }
+    }
+
+    stage('Stage 2: Apply Manifests') {
+      steps {
+        sh """
+          kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f ${MANIFESTS}/rbac.yaml   -n ${NAMESPACE}
+          kubectl apply -f ${MANIFESTS}/mysql/       -n ${NAMESPACE}
+          kubectl apply -f ${MANIFESTS}/api/         -n ${NAMESPACE}
+          kubectl apply -f ${MANIFESTS}/client/      -n ${NAMESPACE}
+          kubectl apply -f ${MANIFESTS}/httproute.yaml -n ${NAMESPACE}
+        """
+      }
+    }
+
+    stage('Stage 3: Update Image Tag') {
+      steps {
+        sh """
+          kubectl set image deployment/${DEPLOY} \
+            api=${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG} \
+            -n ${NAMESPACE}
+          echo "Updated to ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}"
+        """
+      }
+    }
+
+    stage('Stage 4: Wait for Rollout') {
+      steps {
+        sh """
+          kubectl rollout status deployment/${DEPLOY} -n ${NAMESPACE} --timeout=5m
+          echo ""; echo "=== Pods ==="; kubectl get pods -n ${NAMESPACE} -l app=sample-react-app-api
+        """
+      }
+    }
+
+    stage('Stage 5: Smoke Test') {
+      steps {
+        sh """
+          POD=\$(kubectl get pod -l app=sample-react-app-api -n ${NAMESPACE} \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "\$POD" ]; then
+            kubectl exec \$POD -n ${NAMESPACE} -c api -- wget -qO- http://localhost:5000/live
+            kubectl exec \$POD -n ${NAMESPACE} -c api -- wget -qO- http://localhost:5000/health
+          fi
+        """
+      }
+    }
+  }
+
+  post {
+    success { echo "✓ team-b API deployed: ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}" }
+    failure {
+      sh "kubectl get pods -n ${NAMESPACE}; kubectl describe deployment/${DEPLOY} -n ${NAMESPACE} || true"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+# API Service — team-b
+# Named 'api-service' to match proxy_pass in client/default.conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: team-b
+  labels:
+    app: sample-react-app-api
+    team: team-b
+spec:
+  type: ClusterIP
+  selector:
+    app: sample-react-app-api
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000
