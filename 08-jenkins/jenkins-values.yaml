@@ -405,14 +405,113 @@ controller:
                         remote {
                           url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git')
                         }
-                        branches('*/main')
-                      }
-                    }
-                    scriptPath('jenkins/Jenkinsfile-cd-local')
-                    lightweight(true)
-                  }
-                }
-              }
+                         branches('*/main')
+                       }
+                     }
+                     scriptPath('jenkins/Jenkinsfile-cd-local')
+                     lightweight(true)
+                   }
+                 }
+               }
+
+               // ── team-a: sample-react-app subfolder tree ──────────────────
+               // Full-stack React + Node.js app with Vault secret injection.
+               // Vault path: secret/data/team-a/sample-react-app/{api,client}
+               // Namespace:  team-a
+               folder('team-a/sample-react-app') {
+                 displayName('Sample React App')
+                 description('Full-stack React (client) + Node.js (api) with MySQL. Secrets from Vault: team-a/sample-react-app/*')
+               }
+               folder('team-a/sample-react-app/api') {
+                 displayName('API (Node.js)')
+                 description('Node.js Express REST API with Sequelize/MySQL')
+               }
+               folder('team-a/sample-react-app/client') {
+                 displayName('Client (React)')
+                 description('React 19 SPA served by Nginx')
+               }
+
+               // team-a/sample-react-app/api/ci
+               pipelineJob('team-a/sample-react-app/api/ci') {
+                 displayName('CI')
+                 description('API CI: Checkout→Install→Gitleaks→SCA→SAST→QGate→Docker→Trivy→TriggerCD. Image: amitactive2008/sample-react-app-api:<build>')
+                 logRotator { numToKeep(10) }
+                 definition {
+                   cpsScm {
+                     scm {
+                       git {
+                         remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
+                         branches('*/main', '*/dev')
+                       }
+                     }
+                     scriptPath('09-sample-app-react-and-nodejs/api/Jenkinsfile')
+                     lightweight(true)
+                   }
+                 }
+               }
+
+               // team-a/sample-react-app/api/cd
+               pipelineJob('team-a/sample-react-app/api/cd') {
+                 displayName('CD')
+                 description('API CD: deploys amitactive2008/sample-react-app-api:<IMAGE_TAG> to team-a namespace. Triggered by CI or manual run.')
+                 parameters {
+                   stringParam('IMAGE_TAG', 'latest', 'Docker image tag to deploy (CI build number)')
+                 }
+                 logRotator { numToKeep(20) }
+                 definition {
+                   cpsScm {
+                     scm {
+                       git {
+                         remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
+                         branches('*/main')
+                       }
+                     }
+                     scriptPath('09-sample-app-react-and-nodejs/api/Jenkinsfile-cd')
+                     lightweight(true)
+                   }
+                 }
+               }
+
+               // team-a/sample-react-app/client/ci
+               pipelineJob('team-a/sample-react-app/client/ci') {
+                 displayName('CI')
+                 description('Client CI: Checkout→Install→Gitleaks→Tests→SCA→SAST→QGate→Docker→Trivy→TriggerCD. Image: amitactive2008/sample-react-app-client:<build>')
+                 logRotator { numToKeep(10) }
+                 definition {
+                   cpsScm {
+                     scm {
+                       git {
+                         remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
+                         branches('*/main', '*/dev')
+                       }
+                     }
+                     scriptPath('09-sample-app-react-and-nodejs/client/Jenkinsfile')
+                     lightweight(true)
+                   }
+                 }
+               }
+
+               // team-a/sample-react-app/client/cd
+               pipelineJob('team-a/sample-react-app/client/cd') {
+                 displayName('CD')
+                 description('Client CD: deploys amitactive2008/sample-react-app-client:<IMAGE_TAG> to team-a namespace. Triggered by CI or manual run.')
+                 parameters {
+                   stringParam('IMAGE_TAG', 'latest', 'Docker image tag to deploy (CI build number)')
+                 }
+                 logRotator { numToKeep(20) }
+                 definition {
+                   cpsScm {
+                     scm {
+                       git {
+                         remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
+                         branches('*/main')
+                       }
+                     }
+                     scriptPath('09-sample-app-react-and-nodejs/client/Jenkinsfile-cd')
+                     lightweight(true)
+                   }
+                 }
+               }
 
 # ── Persistent storage ────────────────────────────────────────────────────────
 persistence:

@@ -1,0 +1,51 @@
+# HTTPRoutes for sample-react-app.kind.local
+# Pattern: same as other services in this platform (02-vault, 03-keycloak, etc.)
+#
+# Traffic split:
+#   / and all non-/api/* paths → client service (React SPA via Nginx)
+#   /api/*                     → api-service (Node.js Express, via Nginx proxy in client pod)
+#
+# The Nginx in the client container handles /api/* proxying internally.
+# External routing sends everything to the client service and Nginx does the rest.
+---
+# HTTPS route for sample-react-app.kind.local
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sample-react-app
+  namespace: team-a
+spec:
+  parentRefs:
+    - name: native-gateway
+      namespace: default
+      sectionName: https
+  hostnames:
+    - "sample-react-app.kind.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: sample-react-app-client
+          port: 80
+---
+# HTTP → HTTPS redirect
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sample-react-app-http-redirect
+  namespace: team-a
+spec:
+  parentRefs:
+    - name: native-gateway
+      namespace: default
+      sectionName: http
+  hostnames:
+    - "sample-react-app.kind.local"
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

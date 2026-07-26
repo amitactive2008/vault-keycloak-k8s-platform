@@ -1,0 +1,60 @@
+# Client Deployment — React frontend served by Nginx
+#
+# The Nginx default.conf baked into the image:
+#   - Serves static React build from /usr/share/nginx/html
+#   - Proxies /api/* → http://api-service:5000 (K8s ClusterIP DNS)
+#   - Falls back to /index.html for React Router client-side routing
+#
+# No Vault injection needed: the API URL is the stable K8s service name
+# resolved via cluster DNS at runtime (no secret required).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-react-app-client
+  namespace: team-a
+  labels:
+    app: sample-react-app-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sample-react-app-client
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: sample-react-app-client
+    spec:
+      containers:
+        - name: client
+          image: amitactive2008/sample-react-app-client:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3

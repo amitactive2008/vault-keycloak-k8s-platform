@@ -1,0 +1,18 @@
+# Client Service
+# ClusterIP for internal cluster access + referenced by the HTTPRoute.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sample-react-app-client
+  namespace: team-a
+  labels:
+    app: sample-react-app-client
+spec:
+  type: ClusterIP
+  selector:
+    app: sample-react-app-client
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

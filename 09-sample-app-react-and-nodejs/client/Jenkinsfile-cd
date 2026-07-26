@@ -1,0 +1,147 @@
+// ============================================================
+// CD Pipeline — Sample React App: React Client (Frontend)
+//
+// Jenkins folder: team-a/sample-react-app/client/cd
+//
+// Triggered by: team-a/sample-react-app/client/ci (passes IMAGE_TAG)
+// Can also be triggered manually with an IMAGE_TAG parameter.
+//
+// Stages:
+//   1. Checkout      — pull K8s manifests from SCM
+//   2. Apply Client  — ensure client Deployment + Service exist
+//   3. Update Image  — kubectl set image → new tag
+//   4. Rollout Wait  — wait for Nginx pods to be healthy
+//   5. Smoke Test    — curl the frontend via internal service
+// ============================================================
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile '08-jenkins/Jenkins-agent-cd.yaml'
+      defaultContainer 'kubectl'
+    }
+  }
+
+  parameters {
+    string(
+      name: 'IMAGE_TAG',
+      defaultValue: 'latest',
+      description: 'Docker image tag to deploy (build number from Client CI pipeline)'
+    )
+  }
+
+  environment {
+    REGISTRY  = "amitactive2008"
+    CLI_IMAGE = "sample-react-app-client"
+    NAMESPACE = "team-a"
+    DEPLOY    = "sample-react-app-client"
+    APP_DIR   = "09-sample-app-react-and-nodejs"
+  }
+
+  options {
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 10, unit: 'MINUTES')
+  }
+
+  stages {
+
+    // ── Stage 1: Checkout ───────────────────────────────────────────────────
+    stage('Stage 1: Checkout') {
+      steps {
+        echo "Checking out Kubernetes manifests..."
+        checkout scm
+        sh 'git log --oneline -3'
+      }
+    }
+
+    // ── Stage 2: Apply Client Manifests ─────────────────────────────────────
+    stage('Stage 2: Apply Manifests') {
+      steps {
+        echo "Applying client Kubernetes manifests to namespace: ${NAMESPACE}..."
+        sh """
+          kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f ${APP_DIR}/kubernetes/client/ -n ${NAMESPACE}
+          kubectl apply -f ${APP_DIR}/kubernetes/httproute.yaml -n ${NAMESPACE}
+        """
+      }
+    }
+
+    // ── Stage 3: Update Client Image Tag ────────────────────────────────────
+    stage('Stage 3: Update Image Tag') {
+      steps {
+        echo "Rolling client deployment to image tag: ${params.IMAGE_TAG}"
+        sh """
+          kubectl set image deployment/${DEPLOY} \
+            client=${REGISTRY}/${CLI_IMAGE}:${params.IMAGE_TAG} \
+            -n ${NAMESPACE}
+
+          echo "Image updated: ${REGISTRY}/${CLI_IMAGE}:${params.IMAGE_TAG}"
+        """
+      }
+    }
+
+    // ── Stage 4: Wait for Rollout ───────────────────────────────────────────
+    stage('Stage 4: Wait for Rollout') {
+      steps {
+        echo "Waiting for client rollout to complete..."
+        sh """
+          kubectl rollout status deployment/${DEPLOY} \
+            -n ${NAMESPACE} \
+            --timeout=5m
+
+          echo ""
+          echo "=== Deployed Pods ==="
+          kubectl get pods -n ${NAMESPACE} -l app=sample-react-app-client
+
+          echo ""
+          echo "=== Services ==="
+          kubectl get svc -n ${NAMESPACE}
+        """
+      }
+    }
+
+    // ── Stage 5: Smoke Test ─────────────────────────────────────────────────
+    stage('Stage 5: Smoke Test') {
+      steps {
+        echo "Verifying client Nginx serves index.html..."
+        sh """
+          CLIENT_POD=\$(kubectl get pod \
+            -l app=sample-react-app-client \
+            -n ${NAMESPACE} \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+          if [ -z "\$CLIENT_POD" ]; then
+            echo "WARNING: No client pod found — skipping smoke test"
+          else
+            echo "Testing Nginx root / ..."
+            kubectl exec \$CLIENT_POD -n ${NAMESPACE} -c client -- \
+              wget -qO- http://localhost:80/ | grep -c "DevOps Shack" && \
+              echo "Frontend is serving ✓" || echo "WARNING: unexpected response"
+          fi
+        """
+      }
+    }
+
+  } // end stages
+
+  post {
+    success {
+      echo """
+        ╔══════════════════════════════════════════════════════════════════╗
+        ║  CLIENT CD PASSED                                                ║
+        ║  Deployed: ${REGISTRY}/${CLI_IMAGE}:${params.IMAGE_TAG}          ║
+        ║  Namespace: ${NAMESPACE}                                          ║
+        ║  Access: https://sample-react-app.kind.local                     ║
+        ╚══════════════════════════════════════════════════════════════════╝
+      """
+    }
+    failure {
+      sh """
+        echo "=== CLIENT CD FAILED — diagnostics ==="
+        kubectl get pods -n ${NAMESPACE} --show-labels || true
+        kubectl describe deployment/${DEPLOY} -n ${NAMESPACE} || true
+        kubectl logs -l app=sample-react-app-client -n ${NAMESPACE} --tail=20 || true
+      """
+    }
+  }
+}

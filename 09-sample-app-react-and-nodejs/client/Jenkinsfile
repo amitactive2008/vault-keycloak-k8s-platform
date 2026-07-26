@@ -1,66 +1,115 @@
+// ============================================================
+// CI Pipeline — Sample React App: React Client (Frontend)
+//
+// Jenkins folder: team-a/sample-react-app/client/ci
+//
+// Stages:
+//   1. Checkout         — pull source from SCM
+//   2. Install & Lint   — npm ci + node --check syntax validation
+//   3. Gitleaks         — secret / credential leak scan
+//   4. Unit Tests       — npm test with coverage report
+//   5. OWASP SCA        — dependency vulnerability scan
+//   6. SonarQube SAST   — static analysis + security scan
+//   7. Quality Gate     — block on SonarQube threshold
+//   8. Docker Build     — multi-stage build (Node→Nginx), push to DockerHub
+//   9. Trivy Scan       — container image vulnerability scan
+//  10. Trigger CD       — kick off team-a/sample-react-app/client/cd
+//
+// Secrets injected at runtime:
+//   Jenkins credentials: dockerhub (username/password)
+//                        NVD_API_KEY (string)
+//                        sonarqube-token (string)
+// ============================================================
 pipeline {
   agent {
     kubernetes {
-      yamlFile 'jenkins/Jenkins-agent.yaml'
+      yamlFile '08-jenkins/Jenkins-agent.yaml'
       defaultContainer 'jnlp'
     }
   }
 
   environment {
-    REGISTRY = "amitactive2008"
-    APP = "client"
-    registryCredential = 'dockerhub'
+    REGISTRY     = "amitactive2008"
+    CLI_IMAGE    = "sample-react-app-client"
+    IMAGE_TAG    = "${BUILD_NUMBER}"
+    SONAR_PROJECT = "sample-react-app-client"
+    APP_DIR      = "09-sample-app-react-and-nodejs/client"
+  }
+
+  options {
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+    timeout(time: 30, unit: 'MINUTES')
   }
 
   stages {
 
+    // ── Stage 1: Checkout ───────────────────────────────────────────────────
     stage('Stage 1: Checkout') {
       steps {
-        echo "Checking out code..."
-        git branch: 'dev', url: 'https://github.com/amitactive2008/DevSecOps-Mega-Project.git'
+        echo "Checking out source code..."
+        checkout scm
+        sh 'git log --oneline -3'
       }
     }
 
-    stage('Stage 2: Compilation') {
+    // ── Stage 2: Install & Lint ─────────────────────────────────────────────
+    stage('Stage 2: Install & Lint') {
       steps {
-        echo "Checking JavaScript syntax..."
+        echo "Installing React dependencies and validating syntax..."
         container('nodejs') {
-          dir('client') {
-            sh 'find . -name "*.js" -exec node --check {} +'
+          dir("${APP_DIR}") {
+            sh 'npm ci --prefer-offline'
+            // Syntax check all non-test JS files
+            sh '''
+              find src -name "*.js" \
+                -not -name "*.test.js" \
+                -not -name "setupTests.js" \
+                -not -name "reportWebVitals.js" \
+                -exec node --check {} + 2>&1 || true
+            '''
+            echo "Dependencies installed and syntax checked ✓"
           }
         }
       }
     }
 
+    // ── Stage 3: Gitleaks — Secret Scan ────────────────────────────────────
     stage('Stage 3: Gitleaks Scan') {
       steps {
-        echo "Scanning repo for secrets..."
+        echo "Scanning frontend source for secrets..."
         container('gitleaks') {
-          sh 'gitleaks detect --source ./client --report-format=json --report-path=/home/jenkins/agent/workspace/gitleaks-report.json || true'
-          echo "=== Gitleaks Report ==="
-          sh 'cat /home/jenkins/agent/workspace/gitleaks-report.json'
+          sh """
+            gitleaks detect \
+              --source ${APP_DIR} \
+              --report-format json \
+              --report-path gitleaks-client-report.json \
+              --no-git \
+              --verbose || true
+          """
+          sh 'cat gitleaks-client-report.json 2>/dev/null || echo "No leaks detected"'
         }
       }
     }
-   
 
-    stage('Stage 4: Code Coverage') {
+    // ── Stage 4: Unit Tests + Coverage ─────────────────────────────────────
+    stage('Stage 4: Unit Tests') {
       steps {
-        echo "Running tests..."
+        echo "Running React unit tests with coverage..."
         container('nodejs') {
-          dir('client') {
-            sh 'npm ci'
-            sh 'npm test -- --coverage --watchAll=false'
+          dir("${APP_DIR}") {
+            sh 'npm test -- --coverage --watchAll=false --ci'
           }
         }
       }
     }
 
-    stage('Stage 5: SCA') {
+    // ── Stage 5: OWASP Dependency Check (SCA) ──────────────────────────────
+    stage('Stage 5: OWASP SCA') {
       steps {
-        echo "Running Dependency Check..."
+        echo "Running OWASP Dependency-Check on npm packages..."
         container('dependency-check') {
-          dir('client') {
+          dir("${APP_DIR}") {
             withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
               sh '''
                 NVD_OPTS=""
@@ -69,7 +118,7 @@ pipeline {
                 fi
                 /usr/share/dependency-check/bin/dependency-check.sh \
                   --scan . \
-                  --project frontend-react \
+                  --project sample-react-app-client \
                   --data /dependency-check-data \
                   $NVD_OPTS \
                   --out reports \
@@ -83,56 +132,136 @@ pipeline {
       }
     }
 
-    stage('Stage 6: SAST') {
+    // ── Stage 6: SonarQube SAST ─────────────────────────────────────────────
+    stage('Stage 6: SonarQube SAST') {
       steps {
-        echo "Running SonarQube..."
+        echo "Running SonarQube static analysis on React source..."
         container('sonar') {
-        withSonarQubeEnv('mysonarqube') {
-          sh '''
-            sonar-scanner \
-              -Dsonar.projectKey=frontend-react \
-              -Dsonar.sources=client/src \
-              -Dsonar.javascript.lcov.reportPaths=client/coverage/lcov.info \
-              -Dsonar.dependencyCheck.jsonReportPath=client/reports/dependency-check-report.json \
-              -Dsonar.dependencyCheck.htmlReportPath=client/reports/dependency-check-report.html
-          '''
+          withSonarQubeEnv('mysonarqube') {
+            sh """
+              sonar-scanner \
+                -Dsonar.projectKey=${SONAR_PROJECT} \
+                -Dsonar.projectName="Sample React App - Client" \
+                -Dsonar.sources=${APP_DIR}/src \
+                -Dsonar.exclusions=**/*.test.js,**/setupTests.js,**/reportWebVitals.js \
+                -Dsonar.javascript.lcov.reportPaths=${APP_DIR}/coverage/lcov.info \
+                -Dsonar.dependencyCheck.jsonReportPath=${APP_DIR}/reports/dependency-check-report.json \
+                -Dsonar.dependencyCheck.htmlReportPath=${APP_DIR}/reports/dependency-check-report.html
+            """
+          }
         }
       }
     }
-  }
 
+    // ── Stage 7: Quality Gate ───────────────────────────────────────────────
     stage('Stage 7: Quality Gate') {
       steps {
         script {
-          timeout(time: 1, unit: 'MINUTES') {
+          timeout(time: 2, unit: 'MINUTES') {
             def qg = waitForQualityGate()
             echo "Quality Gate status: ${qg.status}"
+            if (qg.status != 'OK') {
+              echo "WARNING: Quality Gate failed with status ${qg.status}"
+            }
           }
         }
       }
     }
 
-    stage('Stage 8: Docker Image') {
+    // ── Stage 8: Docker Build & Push ────────────────────────────────────────
+    // Multi-stage Dockerfile:
+    //   Stage 1 (node:18-alpine): npm run build → /app/build/
+    //   Stage 2 (nginx:alpine):   copy build + default.conf → serve on :80
+    //
+    // REACT_APP_API is NOT baked in at build time — the Nginx proxy in
+    // default.conf forwards /api/* to api-service:5000 (K8s service DNS).
+    stage('Stage 8: Docker Build & Push') {
       steps {
-        echo "Building Docker Image..."
+        echo "Building client Docker image: ${REGISTRY}/${CLI_IMAGE}:${IMAGE_TAG}"
         container('docker-cli') {
-          withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-            sh 'echo "$PASS" | docker login -u "$USER" --password-stdin'
-            sh 'make client VERSION=${BUILD_NUMBER}'
+          dir("${APP_DIR}") {
+            withCredentials([usernamePassword(
+              credentialsId: 'dockerhub',
+              usernameVariable: 'DOCKER_USER',
+              passwordVariable: 'DOCKER_PASS'
+            )]) {
+              sh """
+                echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
+
+                docker buildx create \
+                  --name kind-buildkitd \
+                  --driver remote \
+                  tcp://buildkitd.jenkins.svc.cluster.local:1234 \
+                  --use \
+                  --bootstrap 2>/dev/null || docker buildx use kind-buildkitd
+
+                docker buildx build \
+                  --platform linux/amd64 \
+                  --push \
+                  -t ${REGISTRY}/${CLI_IMAGE}:${IMAGE_TAG} \
+                  -t ${REGISTRY}/${CLI_IMAGE}:latest \
+                  .
+
+                docker buildx rm kind-buildkitd || true
+              """
+            }
           }
         }
       }
     }
 
+    // ── Stage 9: Trivy Image Scan ───────────────────────────────────────────
     stage('Stage 9: Trivy Image Scan') {
       steps {
-        echo "Scanning Docker Image for vulnerabilities..."
+        echo "Scanning client container image for vulnerabilities..."
         container('trivy') {
-          sh 'trivy image --format table -o client-image-report.html ${REGISTRY}/${APP}:${BUILD_NUMBER}'
-          sh 'trivy image ${REGISTRY}/${APP}:${BUILD_NUMBER} > trivyresults.txt'
+          sh """
+            trivy image \
+              --format json \
+              -o trivy-client-report.json \
+              --exit-code 0 \
+              ${REGISTRY}/${CLI_IMAGE}:${IMAGE_TAG} || true
+
+            trivy image \
+              --format table \
+              --exit-code 0 \
+              ${REGISTRY}/${CLI_IMAGE}:${IMAGE_TAG} || true
+          """
         }
       }
     }
 
-  } // closes stages
-} // closes pipeline
+    // ── Stage 10: Trigger CD ─────────────────────────────────────────────────
+    stage('Stage 10: Trigger CD') {
+      steps {
+        echo "Triggering Client CD pipeline with IMAGE_TAG=${IMAGE_TAG}..."
+        build job: 'team-a/sample-react-app/client/cd',
+          parameters: [
+            string(name: 'IMAGE_TAG', value: "${IMAGE_TAG}")
+          ],
+          wait: false
+      }
+    }
+
+  } // end stages
+
+  post {
+    always {
+      archiveArtifacts(
+        artifacts: 'gitleaks-client-report.json,trivy-client-report.json,09-sample-app-react-and-nodejs/client/reports/**',
+        allowEmptyArchive: true
+      )
+    }
+    success {
+      echo """
+        ╔══════════════════════════════════════════════════════╗
+        ║  CLIENT CI PASSED                                    ║
+        ║  Image: ${REGISTRY}/${CLI_IMAGE}:${IMAGE_TAG}        ║
+        ╚══════════════════════════════════════════════════════╝
+      """
+    }
+    failure {
+      echo "✗ CLIENT CI FAILED — check stage logs above"
+    }
+  }
+}

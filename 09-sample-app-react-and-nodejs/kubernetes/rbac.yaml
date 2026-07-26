@@ -1,0 +1,12 @@
+# RBAC for sample-react-app in team-a namespace
+# ServiceAccount: sample-react-app-backend
+#   - used by the API pod so Vault Agent can authenticate via K8s auth
+# ClusterRoleBinding: allows the Vault Agent to call TokenRequest API
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sample-react-app-backend
+  namespace: team-a
+  labels:
+    app: sample-react-app

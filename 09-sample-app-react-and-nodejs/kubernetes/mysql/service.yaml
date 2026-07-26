@@ -1,0 +1,35 @@
+# MySQL Services for sample-react-app
+# Headless service (StatefulSet DNS) + ClusterIP (used by API via name 'mysql')
+---
+# Headless — provides DNS for StatefulSet pods
+apiVersion: v1
+kind: Service
+metadata:
+  name: sample-react-app-mysql
+  namespace: team-a
+  labels:
+    app: sample-react-app-mysql
+spec:
+  clusterIP: None
+  selector:
+    app: sample-react-app-mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
+---
+# ClusterIP — stable DNS name the API connects to
+# The Vault secret stores DB_HOST=mysql (this service name, resolved in team-a namespace)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: team-a
+  labels:
+    app: sample-react-app-mysql
+spec:
+  type: ClusterIP
+  selector:
+    app: sample-react-app-mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
