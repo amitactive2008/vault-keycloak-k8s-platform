@@ -79,7 +79,19 @@ info "Extracting CA cert from cert-manager secret ${_CM_NS}/${_CM_CA_SECRET}..."
 if kubectl get secret "${_CM_CA_SECRET}" -n "${_CM_NS}" &>/dev/null; then
   kubectl get secret "${_CM_CA_SECRET}" -n "${_CM_NS}" \
     -o jsonpath='{.data.tls\.crt}' | base64 -d > "${OIDC_CA_CERT_FILE}"
-  info "CA cert extracted → ${OIDC_CA_CERT_FILE} ($(wc -l < "${OIDC_CA_CERT_FILE}") lines) ✓"
+  _CA_FP=$(openssl x509 -noout -fingerprint -sha256 < "${OIDC_CA_CERT_FILE}" 2>/dev/null | sed 's/.*=//')
+  info "CA cert extracted → ${OIDC_CA_CERT_FILE} ($(wc -l < "${OIDC_CA_CERT_FILE}") lines) SHA256: ${_CA_FP} ✓"
+  # Warn if the CA cert in Vault is already configured but differs from the current one.
+  # This indicates a CA rotation — Vault's OIDC config must be updated (which this script does).
+  _VAULT_CA_FP=$(kubectl exec -n "$VAULT_NS" vault-0 -- sh -c "
+    export VAULT_ADDR=${VAULT_ACTIVE_ADDR}
+    export VAULT_TOKEN=${ROOT_TOKEN:-placeholder}
+    vault read -field=oidc_discovery_ca_pem auth/oidc/config 2>/dev/null
+  " 2>/dev/null | openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//' || true)
+  if [ -n "$_VAULT_CA_FP" ] && [ "$_VAULT_CA_FP" != "$_CA_FP" ]; then
+    warn "CA cert mismatch detected! Vault OIDC config has a stale CA (fingerprint: ${_VAULT_CA_FP})."
+    warn "The cert-manager CA was rotated. This script will update Vault's OIDC config with the new CA."
+  fi
 else
   warn "cert-manager CA secret '${_CM_CA_SECRET}' not found in '${_CM_NS}' — OIDC TLS verification will be skipped"
   warn "Ensure cert-manager is installed and 01-cloud-provider-kind-setup-with-gw-api setup is complete."

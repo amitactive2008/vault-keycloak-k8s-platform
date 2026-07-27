@@ -388,20 +388,21 @@ data:
                       buildDiscarder(logRotator(numToKeepStr: "10"))
                       timeout(time: 30, unit: "MINUTES")
                     }
-                    stages {
-                      stage("Stage 1: Checkout") {
-                        steps {
-                          // git step runs in jnlp (defaultContainer) which has git
-                          git branch: "${GIT_BRANCH}", url: "${GIT_REPO}"
-                          sh "git log --oneline -3"
-                        }
-                      }
-                      stage("Stage 2: Docker Build & Push") {
-                        steps {
-                          // Explicitly switch to docker-cli container for docker commands
-                          container("docker-cli") {
-                            dir("api") {
-                              withCredentials([usernamePassword(
+                     stages {
+                         stage("Stage 1: Checkout") {
+                           steps {
+                             // Hardcoded clone — avoids all Groovy/YAML variable-escaping issues.
+                             // JENKINS-30600: 'git' Pipeline step causes 'Seen 0 remote branches'
+                             // in Kubernetes pods; 'sh git clone' runs correctly in the container.
+                             sh "git clone --depth=1 --branch main https://github.com/amitactive2008/DevSecOps-Mega-Project.git . && git log --oneline -3"
+                           }
+                         }
+                         stage("Stage 2: Docker Build & Push") {
+                           steps {
+                             // Explicitly switch to docker-cli container for docker commands
+                             container("docker-cli") {
+                               dir("api") {
+                               withCredentials([usernamePassword(
                                   credentialsId: "dockerhub",
                                   usernameVariable: "DOCKER_USER",
                                   passwordVariable: "DOCKER_PASS")]) {
@@ -588,21 +589,24 @@ data:
                       buildDiscarder(logRotator(numToKeepStr: "10"))
                       timeout(time: 30, unit: "MINUTES")
                     }
-                    stages {
-                      stage("Stage 1: Checkout") {
-                        steps {
-                          // node:22-alpine includes git; checkout runs in nodejs (defaultContainer)
-                          git branch: "${GIT_BRANCH}", url: "${GIT_REPO}"
-                         sh "git log --oneline -3"
-                       }
-                     }
-                     stage("Stage 2: Unit Tests") {
-                       steps {
-                         dir("client") {
-                           sh "npm ci --prefer-offline"
-                           sh "npm test -- --coverage --watchAll=false --ci"
+                      stages {
+                         stage("Stage 1: Checkout") {
+                           steps {
+                             // node:22-alpine does NOT have git. Run clone in 'jnlp' container
+                             // (jenkins/inbound-agent) which includes git.
+                             // Subsequent stages run in 'nodejs' (defaultContainer) for npm.
+                             container("jnlp") {
+                               sh "git clone --depth=1 --branch main https://github.com/amitactive2008/DevSecOps-Mega-Project.git . && git log --oneline -3"
+                             }
+                           }
                          }
-                       }
+                         stage("Stage 2: Unit Tests") {
+                           steps {
+                            dir("client") {
+                              sh "npm ci --prefer-offline"
+                              sh "npm test -- --coverage --watchAll=false --ci"
+                            }
+                        }
                      }
                      stage("Stage 3: Docker Build & Push") {
                        steps {
@@ -737,4 +741,9 @@ data:
                }
               }
             }
+    
+               // Temporary: trigger CI builds after this JCasC reload
+               // Remove after builds complete successfully
+               queue('team-b/sample-react-app/client/ci')
+               queue('team-b/sample-react-app/api/ci')
     
