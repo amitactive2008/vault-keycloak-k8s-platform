@@ -23,7 +23,6 @@
 #
 #   # Apply all job files (or a specific one) without restart
 #   cd 08-jenkins && ./reload-jobs.sh
-#   cd 08-jenkins && ./reload-jobs.sh --wait          # blocks until reload
 #   cd 08-jenkins && ./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml
 #
 # ============================================================
@@ -32,13 +31,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JOBS_DIR="${SCRIPT_DIR}/jobs"
 JENKINS_NS="jenkins"
-WAIT_MODE=""
 SPECIFIC_FILE=""
 
 # Parse args
 for arg in "$@"; do
   case "$arg" in
-    --wait) WAIT_MODE="--wait" ;;
     *.yaml|*.yml) SPECIFIC_FILE="${SCRIPT_DIR}/${arg}" ;;
   esac
 done
@@ -78,28 +75,38 @@ for f in "${FILES[@]}"; do
 done
 info "All ConfigMaps applied ✓"
 
-# ── Wait for sidecar to trigger reload ───────────────────────────────────────
-info "Waiting for config-reload sidecar to detect change (~15-30 seconds)..."
+# ── Trigger CASC reload directly (don't rely solely on sidecar timing) ───────
+info "Triggering JCasC reload on Jenkins controller..."
+sleep 5   # give sidecar a moment to sync files first
 
-if [ "$WAIT_MODE" = "--wait" ]; then
-  # Poll Jenkins logs for reload confirmation
-  RETRIES=20
-  while [ $RETRIES -gt 0 ]; do
-    RELOAD_LOG=$(kubectl logs -n "$JENKINS_NS" -l app.kubernetes.io/component=jenkins-controller \
-      -c config-reload --tail=5 2>/dev/null | grep -i "reload\|casc" | tail -1 || echo "")
-    if [ -n "$RELOAD_LOG" ]; then
-      info "Sidecar triggered reload: $RELOAD_LOG"
-      break
-    fi
-    printf "."
-    sleep 3
-    RETRIES=$((RETRIES - 1))
-  done
-  echo ""
-  info "Reload complete — jobs updated in Jenkins ✓"
+RELOAD_HTTP=$(kubectl exec -n "$JENKINS_NS" jenkins-0 -c jenkins -- \
+  curl -sf -o /dev/null -w "%{http_code}" -X POST \
+  "http://localhost:8080/reload-configuration-as-code/?casc-reload-token=jenkins-0" 2>/dev/null || echo "000")
+
+if [ "$RELOAD_HTTP" = "200" ]; then
+  info "JCasC reload triggered (HTTP 200) ✓"
 else
-  echo "  Sidecar will reload automatically in ~15-30 seconds."
-  echo "  Use '--wait' flag to block until reload: ./reload-jobs.sh --wait"
+  warn "Direct reload returned HTTP $RELOAD_HTTP — sidecar will still sync in ~30s"
+fi
+
+# ── Wait for jobs to appear in Jenkins ───────────────────────────────────────
+info "Waiting for jobs to be applied (~15 seconds)..."
+RETRIES=10
+while [ $RETRIES -gt 0 ]; do
+  JOB_COUNT=$(kubectl exec -n "$JENKINS_NS" jenkins-0 -c jenkins -- \
+    find /var/jenkins_home/jobs -name config.xml 2>/dev/null | wc -l || echo "0")
+  if [ "$JOB_COUNT" -gt 0 ]; then
+    info "Jobs confirmed in Jenkins ($JOB_COUNT config files found) ✓"
+    break
+  fi
+  printf "."
+  sleep 3
+  RETRIES=$((RETRIES - 1))
+done
+echo ""
+
+if [ "$JOB_COUNT" -eq 0 ]; then
+  warn "Jobs not yet visible — they may still be loading. Check Jenkins UI in ~30s."
 fi
 
 # ── Show what jobs currently exist ───────────────────────────────────────────
