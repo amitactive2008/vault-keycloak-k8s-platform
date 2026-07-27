@@ -45,11 +45,10 @@ Done in ~15 seconds — NO RESTART ✓
 ```bash
 # Add/modify/delete a job in team-a → NO restart
 vim 08-jenkins/jobs/jenkins-jobs-team-a.yaml
-kubectl apply -f 08-jenkins/jobs/jenkins-jobs-team-a.yaml
-# OR: cd 08-jenkins && ./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml [--wait]
+cd 08-jenkins && ./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml
 
 # Apply ALL teams at once → NO restart
-cd 08-jenkins && ./reload-jobs.sh [--wait]
+cd 08-jenkins && ./reload-jobs.sh
 
 # Security, auth, plugins changed → restart required (rarely)
 vim 08-jenkins/jenkins-values.yaml
@@ -216,18 +215,25 @@ The script is **idempotent** — safe to re-run. It:
 
 ### Step 4 — Apply job definitions (NO restart needed)
 
-Job definitions are stored in `jobs/` (one ConfigMap per team) and applied independently:
+Job definitions are stored in `jobs/` (one ConfigMap per team). Use the helper script to validate, apply, and confirm reload:
 
 ```bash
-# Apply all teams at once
-kubectl apply -f 08-jenkins/jobs/
+cd 08-jenkins
 
-# OR apply only one team
-kubectl apply -f 08-jenkins/jobs/jenkins-jobs-team-a.yaml
+# Apply all job files
+./reload-jobs.sh
+
+# Apply a single team's file
+./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml
 ```
 
-The `config-reload` sidecar detects each ConfigMap change and reloads JCasC in ~15 seconds.  
-All folders and pipeline jobs appear in Jenkins without any pod restart.
+The script:
+1. Validates each YAML file before applying
+2. Runs `kubectl apply` for each ConfigMap
+3. Directly triggers JCasC reload on Jenkins (no waiting for sidecar)
+4. Waits until job configs appear in Jenkins and prints the final job tree
+
+All folders and pipeline jobs appear in Jenkins within ~15 seconds — **no pod restart needed**.
 
 ---
 
@@ -242,23 +248,75 @@ jobs/
 └── jenkins-jobs-team-b.yaml   ← team-b: sample-react-app api+client ci/cd
 ```
 
-This is the everyday workflow for adding, modifying, or removing Jenkins jobs:
+### Updating jobs — step by step
+
+**1. Edit the relevant file**
 
 ```bash
-# 1. Edit the relevant team's file
+# Example: add a new pipeline job to team-a
 vim 08-jenkins/jobs/jenkins-jobs-team-a.yaml
-
-# 2a. Apply just that team — sidecar auto-reloads JCasC within 15 seconds
-kubectl apply -f 08-jenkins/jobs/jenkins-jobs-team-a.yaml
-
-# 2b. Or apply all teams at once
-kubectl apply -f 08-jenkins/jobs/
-
-# 2c. Use the helper script (validates YAML, applies all, shows job list)
-cd 08-jenkins && ./reload-jobs.sh
-cd 08-jenkins && ./reload-jobs.sh --wait                              # block until done
-cd 08-jenkins && ./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml      # specific file
 ```
+
+Each file contains a Groovy Job DSL script inside a JCasC `jobs.script` block.  
+Add or modify `folder()` / `pipelineJob()` entries in that script.
+
+**2. Apply with `./reload-jobs.sh`**
+
+Run from the `08-jenkins/` directory:
+
+```bash
+# Apply all job files (devops + team-a + team-b)
+cd 08-jenkins && ./reload-jobs.sh
+
+# Apply a single file only
+cd 08-jenkins && ./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml
+```
+
+**What the script does:**
+
+| Step | Action |
+|------|--------|
+| Validate | Checks each YAML file with `python3 yaml.safe_load` — exits on error |
+| Apply | Runs `kubectl apply -f` for each ConfigMap |
+| Reload | POSTs directly to `http://localhost:8080/reload-configuration-as-code/` on the Jenkins pod |
+| Confirm | Waits until `config.xml` files appear under `/var/jenkins_home/jobs` |
+| Report | Prints the full job tree so you can verify the result |
+
+**3. Verify in Jenkins UI**
+
+Open `https://jenkins.kind.local` — the new folders/jobs appear without any pod restart.
+
+---
+
+### Jobs not showing after reload?
+
+If jobs disappear or don't appear after running `./reload-jobs.sh`, re-run the script — it triggers a fresh JCasC reload every time:
+
+```bash
+cd 08-jenkins && ./reload-jobs.sh
+```
+
+To debug manually:
+
+```bash
+# Check JCasC reload logs on the Jenkins controller
+kubectl logs -n jenkins jenkins-0 -c jenkins --tail=30 \
+  | grep -i "casc\|job\|dsl\|reload"
+
+# Check sidecar file sync logs
+kubectl logs -n jenkins jenkins-0 -c config-reload --tail=20
+
+# Manually trigger a JCasC reload
+kubectl exec -n jenkins jenkins-0 -c jenkins -- \
+  curl -sf -X POST \
+  "http://localhost:8080/reload-configuration-as-code/?casc-reload-token=jenkins-0"
+
+# Confirm job configs are on disk
+kubectl exec -n jenkins jenkins-0 -c jenkins -- \
+  find /var/jenkins_home/jobs -name config.xml | sort
+```
+
+---
 
 ### What triggers each update method
 
