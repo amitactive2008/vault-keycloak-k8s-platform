@@ -154,6 +154,7 @@ Jenkins
 
 | Keycloak group | Jenkins access |
 |---|---|
+| *(anonymous)* | Dashboard view only — can see the home page, cannot view jobs or trigger builds |
 | `devops` | Global admin — all folders and jobs |
 | `team-a` | `team-a/*` only |
 | `team-b` | `team-b/*` only |
@@ -242,7 +243,8 @@ cd 08-jenkins && ./reload-jobs.sh
 | Change type | File to edit | Update command | Restart? |
 |---|---|---|---|
 | Add/modify/delete a job or folder | `jenkins-jobs.yaml` | `kubectl apply` | No |
-| Change security/auth (OIC config) | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
+| Change authorization roles (e.g. anonymous access) | `jenkins-values.yaml` | `helm upgrade` (updates ConfigMap → config-reload applies automatically) | No |
+| Change security/auth (OIC config, plugins) | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
 | Add/remove a plugin | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
 | Change Kubernetes cloud config | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
 | Change credentials/SonarQube config | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
@@ -257,9 +259,12 @@ cd 08-jenkins && ./reload-jobs.sh
 | SonarQube | https://sonarqube.kind.local | `admin` / `admin` |
 
 ### Jenkins SSO login
-1. Open `https://jenkins.kind.local`
-2. Click **Sign in with Keycloak**
-3. Log in with a Keycloak user
+1. Open `https://jenkins.kind.local` — the Jenkins dashboard loads without requiring a login (anonymous read access)
+2. Click **"Sign in"** (top-right header) or **"Log in to Jenkins"** (dashboard welcome message)
+3. Jenkins redirects you to Keycloak
+4. Log in with a Keycloak user → redirected back to Jenkins with your group permissions applied
+
+> **Why anonymous read?** Without it, the OIC plugin intercepts every unauthenticated request and immediately redirects to Keycloak — users never see the Jenkins UI or get a chance to click a login button. The `anonymous-read` global role grants `Overall/Read` only, so unauthenticated users can see the dashboard but cannot view jobs, trigger builds, or access any sensitive data.
 
 ### SonarQube SSO login
 1. Open `https://sonarqube.kind.local`

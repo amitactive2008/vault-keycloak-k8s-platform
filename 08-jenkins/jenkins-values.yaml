@@ -198,7 +198,7 @@ controller:
                      entries:
                        - group: "devops"
                        - user: "admin"
-                   # All authenticated users can log in (Overall/Read)
+                   # All authenticated users can access the Jenkins UI (Overall/Read)
                    # team-a and team-b get their job access via item roles below
                    - name: "authenticated-read"
                      description: "All logged-in users can access Jenkins UI"
@@ -206,7 +206,16 @@ controller:
                        - "Overall/Read"
                      entries:
                        - group: "authenticated"
-                   # NO anonymous role — anonymous users have zero access
+                   # Anonymous users get read-only access so they see the Jenkins UI
+                   # and can click "Log In" to authenticate via Keycloak.
+                   # Without this, the security filter intercepts every request and
+                   # immediately redirects to Keycloak, skipping the Jenkins UI entirely.
+                   - name: "anonymous-read"
+                     description: "Unauthenticated users see the Jenkins UI; Log In button triggers Keycloak SSO"
+                     permissions:
+                       - "Overall/Read"
+                     entries:
+                       - group: "anonymous"
                  items:
                    # team-a → full access to /team-a/* jobs only
                    - name: "team-a-developer"
