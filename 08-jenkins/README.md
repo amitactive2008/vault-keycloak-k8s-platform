@@ -155,8 +155,8 @@ Jenkins
 | Keycloak group | Jenkins access |
 |---|---|
 | `devops` | Global admin — all folders and jobs |
-| `team-a` | `team-a/ci/react-app` + `team-a/cd/react-app` only |
-| `team-b` | `team-b/ci/react-app` + `team-b/cd/react-app` only |
+| `team-a` | `team-a/*` only |
+| `team-b` | `team-b/*` only |
 
 ### SonarQube
 
