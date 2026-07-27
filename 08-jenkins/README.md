@@ -466,19 +466,6 @@ Alternatively, log in via Keycloak as `devops-user-1` (password: `password`) and
 
 ---
 
-
-
-The `09-sample-app-react-and-nodejs/` directory contains:
-- `api/` — Node.js REST API with Sequelize/MySQL
-- `client/` — React frontend with nginx
-- `api/Jenkinsfile` — 9-stage CI pipeline (compile → gitleaks → SCA → SAST → quality gate → docker → trivy → deploy)
-- `client/Jenkinsfile` — 9-stage CI pipeline for React frontend
-- `Jenkinsfile-cd-local` — CD pipeline using `kubectl + kustomize`
-
-Jenkins jobs (`team-a/ci/react-app`, `team-b/ci/react-app`) currently point to the GitHub repo `amitactive2008/DevSecOps-Mega-Project`. Update the Git URL in `jenkins-values.yaml` when you fork the repo or use a local Git server.
-
----
-
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
