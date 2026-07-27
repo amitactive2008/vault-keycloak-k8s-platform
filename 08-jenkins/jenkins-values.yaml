@@ -186,6 +186,15 @@ controller:
               # Required so that automation (scripts, API calls) can authenticate
               # using Jenkins-generated API tokens even when OIC is the security realm.
               allowTokenAccessWithoutOicSession: true
+              # EscapeHatch: allows local admin login at /securityRealm/escapeHatch
+              # when Keycloak is unavailable or for direct admin access.
+              # Login URL: https://jenkins.kind.local/securityRealm/escapeHatch
+              # Use username: admin, secret: Admin@Jenkins2024!
+              properties:
+                - escapeHatch:
+                    username: "admin"
+                    secret: "Admin@Jenkins2024!"
+                    group: "devops"
           authorizationStrategy:
             roleBased:
                roles:

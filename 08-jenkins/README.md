@@ -255,7 +255,7 @@ cd 08-jenkins && ./reload-jobs.sh
 
 | Service | URL | Local admin |
 |---|---|---|
-| Jenkins | https://jenkins.kind.local | `admin` / `Admin@Jenkins2024!` |
+| Jenkins | https://jenkins.kind.local | `admin` / `Admin@Jenkins2024!` — log in at `/login` (EscapeHatch, bypasses Keycloak) |
 | SonarQube | https://sonarqube.kind.local | `admin` / `admin` |
 
 ### Jenkins SSO login
@@ -409,16 +409,36 @@ Alternatives:
 
 **Current state**: SonarQube uses **local authentication** (admin/admin). Groups (`devops`, `team-a`, `team-b`) and project permissions are provisioned by `setup.sh` via the SonarQube REST API and take effect when SSO is eventually added.
 
-### Jenkins — local `admin` user requires browser login for API tokens
+### Jenkins — local `admin` user (EscapeHatch login)
 
-With OIDC as the security realm, the local `admin` user cannot authenticate via basic auth (username/password) in REST API calls. To use the Jenkins API or CLI after initial setup:
+With OIDC as the security realm, the **"Sign in"** button on the Jenkins UI always redirects to Keycloak. The local `admin` user bypasses Keycloak via the **EscapeHatch** feature of the oic-auth plugin.
 
-1. Go to `https://jenkins.kind.local/securityRealm/commenceLogin?from=/` in a browser
-2. Login via Keycloak as `devops-user-1` (password: `password`)
-3. Go to **User → Configure → API Token → Add New Token**
-4. Use that token for API calls: `curl -u devops-user-1:<token> https://jenkins.kind.local/api/json`
+**Login URL:** `https://jenkins.kind.local/login`
 
-Alternatively, use the `EscapeHatch` feature of oic-auth plugin (see plugin docs) to create a local bypass user.
+The `/login` page shows a username/password form (not a Keycloak redirect). Use:
+
+| Field | Value |
+|-------|-------|
+| Username | `admin` |
+| Password | `Admin@Jenkins2024!` |
+
+This gives full admin access (`Overall/Administer`) — same as the `devops` Keycloak group.
+
+> **How it works:** The EscapeHatch property is configured in JCasC under `securityRealm.oic.properties`. It BCrypt-hashes the secret at startup and validates credentials independently of Keycloak. The `devops` group is injected into the session so all admin roles apply immediately.
+
+#### Using the Jenkins API / CLI as admin
+
+After logging in via the EscapeHatch, create an API token for scripted access:
+
+1. Log in at `https://jenkins.kind.local/login` with `admin` / `Admin@Jenkins2024!`
+2. Go to **admin → Configure → API Token → Add New Token**
+3. Use that token for API calls:
+
+```bash
+curl -su admin:<token> https://jenkins.kind.local/api/json
+```
+
+Alternatively, log in via Keycloak as `devops-user-1` (password: `password`) and generate a token for that user.
 
 ---
 
