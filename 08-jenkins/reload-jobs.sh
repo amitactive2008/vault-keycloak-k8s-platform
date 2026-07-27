@@ -55,7 +55,11 @@ kubectl get ns "$JENKINS_NS" &>/dev/null || { error "namespace $JENKINS_NS not f
 if [ -n "$SPECIFIC_FILE" ]; then
   FILES=("$SPECIFIC_FILE")
 else
-  mapfile -t FILES < <(find "$JOBS_DIR" -name "*.yaml" | sort)
+  # Build file list without mapfile (compatible with bash 3.x / macOS)
+  FILES=()
+  while IFS= read -r f; do
+    FILES+=("$f")
+  done < <(find "$JOBS_DIR" -name "*.yaml" | sort)
 fi
 
 [ ${#FILES[@]} -gt 0 ] || { error "No YAML files found in $JOBS_DIR"; exit 1; }
