@@ -181,6 +181,11 @@ kubectl get secret kind-local-ca-secret -n cert-manager \
 sudo security add-trusted-cert -d -r trustRoot \
   -k /Library/Keychains/System.keychain /tmp/kind-local-ca.crt
 rm /tmp/kind-local-ca.crt
+
+# NOTE: if you re-create the cluster or reinstall cert-manager, the CA is re-generated.
+# Re-run this trust step and then re-run 04-vault-keycloak-integration/setup.sh to push
+# the new CA into Vault's OIDC config (otherwise Vault OIDC login will silently fail —
+# see Troubleshooting at the bottom of this file).
 ```
 
 #### Deploy gateway + test app
@@ -338,6 +343,39 @@ helm install team-a-webapp ./webapp-chart \
 kind delete cluster --name vault
 # Ctrl+C in the terminal where cloud-provider-kind is running
 ```
+
+---
+
+## Troubleshooting
+
+### Vault OIDC login fails — "Authentication failed: Missing auth_url"
+
+**Symptom:** Clicking *Sign In* on the Vault UI OIDC page shows:
+```
+Authentication failed: Missing auth_url.
+Please check that allowed_redirect_uris for the role include this mount path.
+```
+
+**Root cause:** The cert-manager CA (`kind-local-ca-secret`) was re-created (e.g. after a cluster
+rebuild or cert-manager reinstall). Vault still holds the **old CA cert** in its OIDC config and
+cannot verify Keycloak's TLS certificate, so it silently returns an empty `auth_url`.
+
+**Fix:**
+
+```bash
+# 1. Re-trust the new CA on macOS
+kubectl get secret kind-local-ca-secret -n cert-manager \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/kind-local-ca.crt
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain /tmp/kind-local-ca.crt
+
+# 2. Push the new CA into Vault's OIDC config
+cd 04-vault-keycloak-integration && ./setup.sh
+```
+
+The script is idempotent and will print a warning if it detects the CA mismatch before fixing it.
+
+For full details see [04-vault-keycloak-integration/README.md — CA cert rotation](04-vault-keycloak-integration/README.md#ca-cert-rotation).
 
 ---
 

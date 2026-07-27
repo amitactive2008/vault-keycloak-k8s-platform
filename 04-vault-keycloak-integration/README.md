@@ -207,10 +207,66 @@ only re-creates the CoreDNS patch and OIDC config if missing.
 
 ---
 
+## CA cert rotation
+
+The cert-manager CA (`kind-local-ca-secret`) may be re-created when the cluster is rebuilt or
+cert-manager is reinstalled. When that happens the CA fingerprint changes, Vault still holds the
+**old CA PEM** in its OIDC config, and every login attempt fails silently with:
+
+```
+Authentication failed: Missing auth_url.
+Please check that allowed_redirect_uris for the role include this mount path.
+```
+
+Vault logs reveal the real cause:
+
+```
+[WARN] auth.oidc: error getting provider for login operation:
+  tls: failed to verify certificate: x509: certificate signed by unknown authority
+```
+
+### Diagnose
+
+```bash
+# Fingerprint currently trusted by Vault
+export VAULT_ADDR=https://vault.kind.local
+export VAULT_TOKEN=$(python3 -c "import json; print(json.load(open('../02-vault/cluster-keys.json'))['root_token'])")
+export VAULT_CACERT=/tmp/kind-local-ca.crt   # current CA — see fix below
+
+vault read -field=oidc_discovery_ca_pem auth/oidc/config \
+  | openssl x509 -noout -fingerprint -sha256
+
+# Fingerprint of the live cert-manager CA
+kubectl get secret kind-local-ca-secret -n cert-manager \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d \
+  | openssl x509 -noout -fingerprint -sha256
+```
+
+If the two fingerprints differ, the CA was rotated. Fix by re-running the integration script —
+it always extracts the current CA from cert-manager and re-applies it to Vault:
+
+```bash
+cd 04-vault-keycloak-integration && ./setup.sh
+```
+
+`setup.sh` will print a warning during Step 0 if it detects a mismatch before writing the fix:
+
+```
+[WARN] CA cert mismatch detected! Vault OIDC config has a stale CA (fingerprint: XX:XX:…).
+[WARN] The cert-manager CA was rotated. This script will update Vault's OIDC config with the new CA.
+```
+
+> **Note:** After a CA rotation you must also re-trust the new CA on macOS, otherwise your browser
+> and the Vault CLI will reject HTTPS connections to `*.kind.local`.  
+> See the trust step in the root `README.md` (Step 1 — cert-manager section).
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
+| `Authentication failed: Missing auth_url` in Vault UI | Vault's OIDC config holds a **stale CA cert** after cert-manager CA rotation — Vault cannot reach Keycloak over TLS | Re-run `./setup.sh`; it detects the mismatch and updates the CA. See [CA cert rotation](#ca-cert-rotation) |
 | `error checking oidc discovery URL` | CoreDNS not yet propagated / Envoy GW IP changed | Re-run `./setup.sh` (Step 1 re-patches automatically) |
 | `Authentication failed: Invalid role` in Vault UI | OIDC config missing or CA cert wrong | `vault read auth/oidc/config` — if empty, re-run script |
 | User logs in but gets `permission denied` | Group alias not created or JWT `groups` claim missing | `vault list identity/group/name`; verify Keycloak `vault` client has groups mapper |
