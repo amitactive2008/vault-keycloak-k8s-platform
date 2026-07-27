@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tls-secret
+  namespace: dev
+spec:
+  secretName: tls-secret
+  dnsNames:
+    - holymolyops.deployops.fun
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+

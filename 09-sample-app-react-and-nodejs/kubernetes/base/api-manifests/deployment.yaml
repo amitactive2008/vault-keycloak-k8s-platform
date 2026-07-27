@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-deployment
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/owner: ayaan
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/owner: ayaan
+    spec:
+      serviceAccountName: app-access-sa
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - name: api
+        envFrom:
+          - configMapRef:
+              name: db-config
+        securityContext:
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+        image: amitactive2008/api:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http 
+          containerPort: 5000
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+          - name: secrets-store
+            mountPath: /mnt/secrets
+            readOnly: true
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            export DB_USERNAME=$(cat /mnt/secrets/DB_USERNAME);
+            export DB_PASSWORD=$(cat /mnt/secrets/DB_PASSWORD);
+            export JWT_SECRET=$(cat /mnt/secrets/JWT_SECRET);
+            echo "Starting API service with secure DB credentials";
+            exec node server.js
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "app-secrets" 
+

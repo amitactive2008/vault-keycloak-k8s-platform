@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: database-migration
+  namespace: dev
+spec:
+  ttlSecondsAfterFinished: 100
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      serviceAccountName: app-access-sa
+      restartPolicy: Never
+      containers:
+      - name: migration
+        image: amitactive2008/api:latest
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            export DB_USERNAME=$(cat /mnt/secrets/DB_USERNAME)
+            export DB_PASSWORD=$(cat /mnt/secrets/DB_PASSWORD)
+            export JWT_SECRET=$(cat /mnt/secrets/JWT_SECRET)
+            echo "Running database migrations..."
+            exec node scripts/migrate.js
+        envFrom:
+        - configMapRef:
+            name: db-config
+        resources:
+          requests: 
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: secrets-store
+          mountPath: /mnt/secrets
+          readOnly: true
+      volumes:
+      - name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "app-secrets"

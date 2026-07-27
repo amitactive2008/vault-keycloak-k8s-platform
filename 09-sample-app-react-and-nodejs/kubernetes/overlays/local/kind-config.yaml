@@ -1,0 +1,21 @@
+# Kind cluster config for local development with Podman.
+# Maps Traefik NodePort 30080 → host 8080 (HTTP)
+#       Traefik NodePort 30443 → host 8443 (HTTPS)
+# Access the app at: https://app.local:8443  (add 127.0.0.1 app.local to /etc/hosts)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 30443
+        hostPort: 8443
+        protocol: TCP

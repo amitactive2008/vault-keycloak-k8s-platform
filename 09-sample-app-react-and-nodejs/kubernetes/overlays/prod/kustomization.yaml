@@ -1,0 +1,66 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+namespace: prod
+
+images: 
+  - name: amitactive2008/api
+    newTag: latest
+
+  - name: amitactive2008/client
+    newTag: latest2
+
+patches:
+  - path: api-deployment-patch.yaml
+    target:
+      kind: Deployment
+      name: api-deployment
+
+  - path: api-service-patch.yaml
+    target:
+      kind: Service
+      name: api-service
+
+  - path: client-deployment-patch.yaml
+    target:
+      kind: Deployment
+      name: client-deployment
+
+  - path: client-service-patch.yaml
+    target:
+      kind: Service
+      name: client-service
+
+  - path: db-configmap-patch.yaml
+    target:
+      kind: ConfigMap
+      name: db-config
+
+  - path: db-migrationJob-patch.yaml
+    target:
+      kind: Job
+      name: database-migration
+
+  - path: externalname-service-patch.yaml
+    target:
+      kind: Service
+      name: mysql-db
+
+  - path: app-access-sa-patch.yaml
+    target:
+      kind: ServiceAccount
+      name: app-access-sa
+
+  - path: app-secret-provider-patch.yaml
+    target:
+      kind: SecretProviderClass
+      name: app-secrets
+
+  - path: ingress-patch.yaml
+    target:
+      kind: Ingress
+      name: app-ingress

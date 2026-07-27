@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-access-sa
+  namespace: dev
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: api-dev
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/owner: ayaan

@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client-deployment
+  namespace: prod
+  labels:
+    app.kubernetes.io/instance: client-prod
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: client-prod
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: client-prod
+

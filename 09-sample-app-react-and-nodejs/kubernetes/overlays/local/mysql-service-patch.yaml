@@ -1,0 +1,17 @@
+# JSON 6902 patch: transforms the ExternalName service (pointing to AWS RDS)
+# into a ClusterIP service that routes traffic to the local MySQL pod.
+- op: replace
+  path: /spec/type
+  value: ClusterIP
+- op: remove
+  path: /spec/externalName
+- op: add
+  path: /spec/selector
+  value:
+    app: mysql
+- op: add
+  path: /spec/ports
+  value:
+    - port: 3306
+      targetPort: 3306
+      protocol: TCP

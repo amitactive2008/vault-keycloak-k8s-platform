@@ -1,0 +1,15 @@
+- op: add
+  path: /metadata/annotations
+  value:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+
+- op: add
+  path: /spec/tls
+  value:
+    - hosts:
+        - dev-holymolyops.deployops.fun
+      secretName: tls-secret
+
+- op: add
+  path: /spec/rules/0/host
+  value: dev-holymolyops.deployops.fun

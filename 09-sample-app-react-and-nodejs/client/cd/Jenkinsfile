@@ -1,0 +1,110 @@
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile '09-sample-app-react-and-nodejs/client/cd/Jenkins-agent-cd.yaml'
+      defaultContainer 'kubectl'
+    }
+  }
+
+  parameters {
+    string(
+      name: 'API_IMAGE_TAG',
+      defaultValue: 'latest',
+      description: 'API image tag to deploy (e.g. Jenkins build number from api-ci)'
+    )
+    string(
+      name: 'CLIENT_IMAGE_TAG',
+      defaultValue: 'latest1',
+      description: 'Client image tag (leave as latest1 unless client-ci ran too)'
+    )
+  }
+
+  stages {
+
+    stage('Stage 1: Checkout') {
+      steps {
+        echo "Checking out code..."
+        git branch: 'main', url: 'https://github.com/amitactive2008/vault-keycloak-k8s-platform.git'
+      }
+    }
+  stage('Stage 2: Setup Kubeconfig') {
+            steps {
+                echo "Configuring cluster access..."
+                // Use withCredentials if your kubeconfig is stored as a Jenkins Secret File ID
+                // withCredentials([file(credentialsId: 'my-kubeconfig-credential-id', variable: 'KUBECONFIG')]) {
+                //     sh 'kubectl cluster-info'
+                // }
+                
+                // Alternatively, if generating or copying it dynamically in the pod:
+                sh '''
+                    mkdir -p ~/.kube
+                    # Add your command to fetch kubeconfig here if using an external cluster, e.g.:
+                    # aws eks update-kubeconfig --name my-cluster --region us-east-1
+                '''
+            }
+        }
+    stage('Stage 3: Update Image Tags') {
+      steps {
+        echo "Patching kustomization.yaml with new image tags..."
+        // Use triple-double-quotes so Groovy interpolates ${params.*} directly.
+        // \\\\ → \\  (Groovy) → \  (shell)  e.g. \\/ → \/  for sed
+        // \\"  → \"  (Groovy) → "  (shell)  e.g. \\"13\\" → "13" in sed replacement
+        sh """
+          sed -i '/name: amitactive2008\\/api/{n; s/newTag: .*/newTag: \\"${params.API_IMAGE_TAG}\\"/}' \\
+            09-sample-app-react-and-nodejs/kubernetes/overlays/local/kustomization.yaml
+
+          sed -i '/name: amitactive2008\\/client/{n; s/newTag: .*/newTag: \\"${params.CLIENT_IMAGE_TAG}\\"/}' \\
+            09-sample-app-react-and-nodejs/kubernetes/overlays/local/kustomization.yaml
+
+          echo '=== Updated image tags ==='
+          grep -A1 'name: amitactive2008' 09-sample-app-react-and-nodejs/kubernetes/overlays/local/kustomization.yaml | grep -v '^--\$'
+        """
+      }
+    }
+
+    stage('Stage 4: Deploy') {
+      steps {
+        echo "Deploying to local Kind cluster (namespace: local)..."
+        sh '''
+          # Migration job is immutable — must delete before re-apply
+          kubectl delete job database-migration -n local --ignore-not-found
+
+          # Apply the full local overlay
+          kubectl apply -k 09-sample-app-react-and-nodejs/kubernetes/overlays/local
+        '''
+      }
+    }
+
+    stage('Stage 5: Verify Rollout') {
+      steps {
+        echo "Waiting for rollout to complete..."
+        sh '''
+          kubectl rollout status deployment/api-deployment    -n local --timeout=5m
+          kubectl rollout status deployment/client-deployment -n local --timeout=5m
+
+          echo ""
+          echo "=== Deployed Pods ==="
+          kubectl get pods -n local
+
+          echo ""
+          echo "=== API Health Check ==="
+          POD=$(kubectl get pod -l app.kubernetes.io/name=api -n local \
+                  -o jsonpath="{.items[0].metadata.name}")
+          kubectl exec -n local "$POD" -- wget -qO- http://localhost:5000/health
+          echo ""
+          kubectl exec -n local "$POD" -- wget -qO- http://localhost:5000/live
+        '''
+      }
+    }
+
+  }
+
+  post {
+    success {
+      echo "Deployed amitactive2008/api:${params.API_IMAGE_TAG} and amitactive2008/client:${params.CLIENT_IMAGE_TAG} to local Kind cluster ✓"
+    }
+    failure {
+      echo "Deployment failed. Check: kubectl get pods -n local && kubectl describe pod -n local <pod>"
+    }
+  }
+}

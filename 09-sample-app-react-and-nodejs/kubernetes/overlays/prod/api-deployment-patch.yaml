@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-deployment
+  namespace: prod
+  labels:
+    app.kubernetes.io/instance: api-prod
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: api-prod
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: api-prod
+    spec:
+      containers:
+      - name: api
+        image: amitactive2008/api:latest
+        resources:
+          requests:
+            memory: "258Mi"
+            cpu: "101m"
+          limits:
+            memory: "513Mi"
+            cpu: "501m"
+         
+

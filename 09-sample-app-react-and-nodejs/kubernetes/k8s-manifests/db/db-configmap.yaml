@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-config
+  namespace: dev
+data:
+  DB_HOST: "mysql-db.dev.svc.cluster.local"
+  DB_NAME: "crud_app"
+  DB_PORT: "3306"
+  NODE_ENV: "production"

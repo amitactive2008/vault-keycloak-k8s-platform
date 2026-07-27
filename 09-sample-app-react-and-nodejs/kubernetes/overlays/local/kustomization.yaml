@@ -1,0 +1,66 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Reference base components individually to skip aws-sm (CSI driver not used locally).
+# Secrets are delivered by ESO pulling from Vault and creating K8s Secrets.
+resources:
+  - ../../base/api-manifests
+  - ../../base/client-manifests
+  - ../../base/mysql-db
+  - ../../base/ingress
+  - namespace.yaml
+  - app-access-sa.yaml
+  - mysql-deployment.yaml
+  - cluster-secret-store.yaml
+  - external-secret.yaml
+  - self-signed-clusterissuer.yaml
+  - nginx-config.yaml
+
+namespace: local
+
+images:
+  - name: amitactive2008/api
+    newTag: local-v2
+  - name: amitactive2008/client
+    newTag: latest1
+
+patches:
+  - path: api-deployment-patch.yaml
+    target:
+      kind: Deployment
+      name: api-deployment
+
+  - path: client-deployment-patch.yaml
+    target:
+      kind: Deployment
+      name: client-deployment
+
+  - path: api-service-patch.yaml
+    target:
+      kind: Service
+      name: api-service
+
+  - path: client-service-patch.yaml
+    target:
+      kind: Service
+      name: client-service
+
+  - path: db-configmap-patch.yaml
+    target:
+      kind: ConfigMap
+      name: db-config
+
+  - path: db-migrationJob-patch.yaml
+    target:
+      kind: Job
+      name: database-migration
+
+  - path: mysql-service-patch.yaml
+    target:
+      kind: Service
+      name: mysql-db
+
+  - path: ingress-patch.yaml
+    target:
+      kind: Ingress
+      name: app-ingress

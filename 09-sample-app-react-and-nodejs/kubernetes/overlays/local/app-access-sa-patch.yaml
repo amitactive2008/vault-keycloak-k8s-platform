@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-access-sa
+  labels:
+    app.kubernetes.io/instance: api-local
+  # No IRSA annotation needed — Vault uses Kubernetes auth instead of AWS IAM.

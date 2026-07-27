@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client-deployment
+  labels:
+    app.kubernetes.io/name: client
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/owner: ayaan
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: client
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: client
+        app.kubernetes.io/component: frontend
+        app.kubernetes.io/owner: ayaan
+    spec:
+      containers:
+      - name: client
+        image: amitactive2008/client:latest2
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+

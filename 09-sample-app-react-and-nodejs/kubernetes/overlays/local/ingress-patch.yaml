@@ -1,0 +1,35 @@
+# Traefik ingress with cert-manager self-signed TLS.
+# Add '127.0.0.1 app.local' to /etc/hosts before accessing the app.
+# NOTE: This cluster uses nginx ingress with hostPort 80/443 (kind-specific manifest).
+#       ingressClassName is set to nginx for local; change to traefik for a cluster
+#       where Traefik is deployed with hostPort or a proper LoadBalancer.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: selfsigned-issuer
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.local
+      secretName: app-tls-local
+  rules:
+    - host: app.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-service
+                port:
+                  number: 5000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: client-service
+                port:
+                  number: 80

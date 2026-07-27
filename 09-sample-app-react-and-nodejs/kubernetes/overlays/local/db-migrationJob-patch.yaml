@@ -1,0 +1,19 @@
+# JSON 6902 patch: removes CSI volume/mount and shell wrapper from the migration job,
+# and uses the ESO-created K8s Secret directly as env vars.
+- op: replace
+  path: /spec/template/spec/containers/0/imagePullPolicy
+  value: IfNotPresent
+- op: replace
+  path: /spec/template/spec/containers/0/command
+  value: ["node", "scripts/migrate.js"]
+- op: remove
+  path: /spec/template/spec/containers/0/args
+- op: remove
+  path: /spec/template/spec/containers/0/volumeMounts/0
+- op: remove
+  path: /spec/template/spec/volumes/0
+- op: add
+  path: /spec/template/spec/containers/0/envFrom/-
+  value:
+    secretRef:
+      name: app-secrets

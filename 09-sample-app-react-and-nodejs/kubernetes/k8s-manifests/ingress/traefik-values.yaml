@@ -1,0 +1,34 @@
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+
+providers:
+  kubernetesIngress:
+    enabled: true
+
+api:
+  dashboard: false
+
+logs:
+  general:
+    level: INFO
+
+ports:
+  web:
+    port: 8000
+    expose:
+      default: true
+    exposedPort: 80
+
+  websecure:
+    port: 8443
+    expose:
+      default: true
+    exposedPort: 443
+
+additionalArguments:
+  - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+  - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+  - "--entrypoints.web.http.redirections.entrypoint.permanent=false"
+  - "--entrypoints.websecure.http.tls=true"
+

@@ -1,0 +1,8 @@
+# cert-manager ClusterIssuer using self-signed strategy for local development.
+# For production use letsencrypt-staging or letsencrypt-prod ClusterIssuers instead.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}

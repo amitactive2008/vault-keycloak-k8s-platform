@@ -1,0 +1,24 @@
+# JSON 6902 patch: removes the CSI secrets-store volume/mount and shell wrapper
+# (used for AWS SM in production), and injects the ESO-created K8s Secret instead.
+- op: replace
+  path: /spec/replicas
+  value: 1
+- op: replace
+  path: /spec/template/spec/containers/0/imagePullPolicy
+  value: IfNotPresent
+- op: remove
+  path: /spec/template/spec/containers/0/command
+- op: remove
+  path: /spec/template/spec/containers/0/args
+- op: remove
+  path: /spec/template/spec/containers/0/volumeMounts/0
+- op: remove
+  path: /spec/template/spec/volumes/0
+- op: add
+  path: /spec/template/spec/containers/0/envFrom/-
+  value:
+    secretRef:
+      name: app-secrets
+- op: add
+  path: /spec/template/metadata/labels/app.kubernetes.io~1instance
+  value: api-local
