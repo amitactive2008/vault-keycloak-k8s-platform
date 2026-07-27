@@ -1,34 +1,26 @@
-# jenkins-jobs.yaml — Standalone ConfigMap for all Jenkins job definitions
+# jenkins-jobs.yaml — SUPERSEDED: job definitions have been split into separate files
 #
-# HOW IT WORKS:
-#   The Jenkins 'config-reload' sidecar container watches for ConfigMaps with
-#   label 'jenkins-jenkins-config: "true"' in the jenkins namespace.
-#   When this ConfigMap is applied (kubectl apply), the sidecar:
-#     1. Copies the data to /var/jenkins_home/casc_configs/jobs.yaml
-#     2. POSTs to /reload-configuration-as-code/ on the Jenkins controller
-#     3. Jenkins reloads JCasC and updates all job definitions in-place
-#   NO POD RESTART NEEDED!
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  Job definitions are now in the jobs/ directory (one file per team):    │
+# │                                                                          │
+# │    jobs/jenkins-jobs-devops.yaml   ← devops folder tree                 │
+# │    jobs/jenkins-jobs-team-a.yaml   ← team-a folders + pipeline jobs     │
+# │    jobs/jenkins-jobs-team-b.yaml   ← team-b folders + pipeline jobs     │
+# │                                                                          │
+# │  Apply:  cd 08-jenkins && ./reload-jobs.sh                              │
+# │  Single: ./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml                 │
+# └─────────────────────────────────────────────────────────────────────────┘
 #
-# HOW TO UPDATE JOBS:
-#   1. Edit this file (add/modify/delete folders and pipeline jobs)
-#   2. Run:  kubectl apply -f 08-jenkins/jenkins-jobs.yaml
-#   3. Wait ~15-30 seconds for the sidecar to trigger JCasC reload
-#   4. Done — Jenkins jobs updated without any restart!
+# This file is kept for reference only. Do NOT apply it — the old
+# jenkins-jobs-config ConfigMap was replaced by the three per-team ConfigMaps.
 #
-# HOW TO TRIGGER A SPECIFIC JOB AFTER UPDATING:
-#   kubectl exec -n jenkins jenkins-0 -c jenkins -- bash -c "
-#     CRUMB=\$(curl -sf -c /tmp/c.txt http://localhost:8080/crumbIssuer/api/json | grep -o '\"crumb\":\"[^\"]*\"' | awk -F'\"' '{print \$4}')
-#     curl -sf -X POST -b /tmp/c.txt -H \"Jenkins-Crumb: \$CRUMB\" \
-#       'http://localhost:8080/job/team-b/job/sample-react-app/job/api/job/ci/build'
-#   "
-#
-# WHAT STAYS IN jenkins-values.yaml (requires Helm upgrade + restart - rarely changes):
-#   - Security realm (OIC/Keycloak auth)
-#   - Authorization strategy (role-strategy RBAC)
-#   - Kubernetes cloud config
-#   - Plugin list
-#   - Credentials config
-#   - SonarQube server config
+# HOW THE SIDECAR PICKS UP MULTIPLE FILES:
+#   Each ConfigMap in jobs/ has label 'jenkins-jenkins-config: "true"'.
+#   The config-reload sidecar watches all matching ConfigMaps and writes each
+#   data entry as a separate file under /var/jenkins_home/casc_configs/.
+#   JCasC merges all jobs: sections across files — each team's jobs are fully
+#   independent and can be updated without touching other teams' files.
+
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -80,64 +72,7 @@ data:
             displayName('Team A')
             description('Team A pipelines — accessible by team-a and devops groups')
           }
-          folder('team-a/ci') {
-            displayName('CI')
-            description('Team A Continuous Integration pipelines')
-          }
-          folder('team-a/cd') {
-            displayName('CD')
-            description('Team A Continuous Deployment pipelines')
-          }
-    
-          // team-a/ci/react-app: React frontend CI (gitleaks, SCA, SAST, docker image)
-          pipelineJob('team-a/ci/react-app') {
-            displayName('React App CI')
-            description('''CI pipeline for team-a React frontend.
-              Stages: Checkout → Compile → Gitleaks → SCA → SAST → Quality Gate → Docker → Trivy
-              Agent: jenkins/Jenkins-agent.yaml (nodejs, sonar, trivy, docker-cli containers)''')
-            logRotator { numToKeep(10) }
-            definition {
-              cpsScm {
-                scm {
-                  git {
-                    remote {
-                      url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git')
-                    }
-                    branches('*/main', '*/dev')
-                  }
-                }
-                scriptPath('client/Jenkinsfile')
-                lightweight(true)
-              }
-            }
-          }
-    
-          // team-a/cd/react-app: React frontend CD (deploy to Kind cluster)
-          pipelineJob('team-a/cd/react-app') {
-            displayName('React App CD')
-            description('''CD pipeline for team-a React frontend.
-              Deploys the client image built by team-a/ci/react-app to the Kind cluster.
-              Agent: jenkins/Jenkins-agent-cd.yaml (kubectl container)''')
-            parameters {
-              stringParam('CLIENT_IMAGE_TAG', 'latest', 'Client Docker image tag from CI build')
-              stringParam('API_IMAGE_TAG',    'latest', 'API Docker image tag (if co-deploying)')
-            }
-            logRotator { numToKeep(20) }
-            definition {
-              cpsScm {
-                scm {
-                  git {
-                    remote {
-                      url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git')
-                    }
-                    branches('*/main')
-                  }
-                }
-                scriptPath('jenkins/Jenkinsfile-cd-local')
-                lightweight(true)
-              }
-            }
-          }
+          
     
           // ── Team B folder tree ───────────────────────────────────────
           folder('team-b') {
@@ -152,53 +87,6 @@ data:
             displayName('CD')
             description('Team B Continuous Deployment pipelines')
           }
-    
-          // team-b/ci/react-app
-          pipelineJob('team-b/ci/react-app') {
-            displayName('React App CI')
-            description('''CI pipeline for team-b React frontend.
-              Stages: Checkout → Compile → Gitleaks → SCA → SAST → Quality Gate → Docker → Trivy''')
-            logRotator { numToKeep(10) }
-            definition {
-              cpsScm {
-                scm {
-                  git {
-                    remote {
-                      url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git')
-                    }
-                    branches('*/main', '*/dev')
-                  }
-                }
-                scriptPath('client/Jenkinsfile')
-                lightweight(true)
-              }
-            }
-          }
-    
-          // team-b/cd/react-app
-          pipelineJob('team-b/cd/react-app') {
-            displayName('React App CD')
-            description('CD pipeline for team-b React frontend deployment')
-            parameters {
-              stringParam('CLIENT_IMAGE_TAG', 'latest', 'Client Docker image tag')
-              stringParam('API_IMAGE_TAG',    'latest', 'API Docker image tag')
-            }
-            logRotator { numToKeep(20) }
-            definition {
-              cpsScm {
-                scm {
-                  git {
-                    remote {
-                      url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git')
-                    }
-                     branches('*/main')
-                   }
-                 }
-                 scriptPath('jenkins/Jenkinsfile-cd-local')
-                 lightweight(true)
-               }
-             }
-           }
     
            // ── team-a: sample-react-app subfolder tree ──────────────────
            // Full-stack React + Node.js app with Vault secret injection.
@@ -230,7 +118,7 @@ data:
                      branches('*/main', '*/dev')
                    }
                  }
-                 scriptPath('09-sample-app-react-and-nodejs/api/Jenkinsfile')
+                 scriptPath('api/Jenkinsfile')
                  lightweight(true)
                }
              }
@@ -252,7 +140,7 @@ data:
                      branches('*/main')
                    }
                  }
-                 scriptPath('09-sample-app-react-and-nodejs/api/Jenkinsfile-cd')
+                 scriptPath('jenkins/Jenkinsfile-cd-local')
                  lightweight(true)
                }
              }
@@ -271,7 +159,7 @@ data:
                      branches('*/main', '*/dev')
                    }
                  }
-                 scriptPath('09-sample-app-react-and-nodejs/client/Jenkinsfile')
+                 scriptPath('client/Jenkinsfile')
                  lightweight(true)
                }
              }
@@ -293,7 +181,7 @@ data:
                      branches('*/main')
                    }
                  }
-                  scriptPath('09-sample-app-react-and-nodejs/client/Jenkinsfile-cd')
+                  scriptPath('jenkins/Jenkinsfile-cd-local')
                   lightweight(true)
                 }
               }
@@ -338,412 +226,3 @@ data:
              displayName('Client (React)')
              description('React SPA via Nginx — team-b namespace')
            }
-    
-           // ── api/ci ──────────────────────────────────────────────────
-           pipelineJob('team-b/sample-react-app/api/ci') {
-             displayName('CI')
-             description('API CI: checkout GitHub dev branch, build multi-platform Docker image team-b-<BUILD>, push to DockerHub, trigger CD.')
-             logRotator { numToKeep(10) }
-             definition {
-               cps {
-                 sandbox(true)
-                 script('''
-                 pipeline {
-                   agent {
-                     kubernetes {
-                        defaultContainer 'jnlp'
-                        yaml """
-                        apiVersion: v1
-                        kind: Pod
-                        spec:
-                          volumes:
-                          - name: ws
-                            emptyDir: {}
-                          containers:
-                          - name: jnlp
-                            image: jenkins/inbound-agent
-                            volumeMounts:
-                            - name: ws
-                              mountPath: /home/jenkins/agent
-                          - name: docker-cli
-                            image: docker:27-cli
-                            command: ["cat"]
-                            tty: true
-                            volumeMounts:
-                            - name: ws
-                              mountPath: /home/jenkins/agent
-                        """
-                      }
-                    }
-                    environment {
-                      REGISTRY   = "amitactive2008"
-                      IMAGE_NAME = "sample-react-app-api"
-                      TEAM       = "team-b"
-                      IMAGE_TAG  = "team-b-${BUILD_NUMBER}"
-                      GIT_REPO   = "https://github.com/amitactive2008/DevSecOps-Mega-Project.git"
-                      GIT_BRANCH = "main"
-                    }
-                    options {
-                      disableConcurrentBuilds()
-                      buildDiscarder(logRotator(numToKeepStr: "10"))
-                      timeout(time: 30, unit: "MINUTES")
-                    }
-                     stages {
-                         stage("Stage 1: Checkout") {
-                           steps {
-                             // Hardcoded clone — avoids all Groovy/YAML variable-escaping issues.
-                             // JENKINS-30600: 'git' Pipeline step causes 'Seen 0 remote branches'
-                             // in Kubernetes pods; 'sh git clone' runs correctly in the container.
-                             sh "git clone --depth=1 --branch main https://github.com/amitactive2008/DevSecOps-Mega-Project.git . && git log --oneline -3"
-                           }
-                         }
-                         stage("Stage 2: Docker Build & Push") {
-                           steps {
-                             // Explicitly switch to docker-cli container for docker commands
-                             container("docker-cli") {
-                               dir("api") {
-                               withCredentials([usernamePassword(
-                                  credentialsId: "dockerhub",
-                                  usernameVariable: "DOCKER_USER",
-                                  passwordVariable: "DOCKER_PASS")]) {
-                                sh """
-                                  echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                                  docker buildx create --name tb-api-bd \\\\
-                                    --driver remote \\\\
-                                    tcp://buildkitd.jenkins.svc.cluster.local:1234 \\\\
-                                    --use --bootstrap 2>/dev/null || docker buildx use tb-api-bd
-                                  docker buildx build \\\\
-                                    --platform linux/amd64,linux/arm64 \\\\
-                                    --push \\\\
-                                    -t ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} \\\\
-                                    -t ${REGISTRY}/${IMAGE_NAME}:${TEAM}-latest \\\\
-                                    .
-                                  docker buildx rm tb-api-bd || true
-                                """
-                              }
-                            }
-                          }
-                        }
-                      }
-                      stage("Stage 3: Trigger CD") {
-                        steps {
-                          build job: "team-b/sample-react-app/api/cd",
-                                parameters: [string(name: "IMAGE_TAG", value: "${IMAGE_TAG}")],
-                                wait: false
-                        }
-                      }
-                    }
-                    post {
-                      success { echo "✓ team-b API CI: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" }
-                      failure { echo "✗ team-b API CI failed" }
-                    }
-                  }
-                 '''.stripIndent())
-               }
-             }
-           }
-    
-           // ── api/cd ──────────────────────────────────────────────────
-           pipelineJob('team-b/sample-react-app/api/cd') {
-             displayName('CD')
-             description('API CD: update team-b/sample-react-app-api image tag, rollout, smoke test.')
-             parameters {
-               stringParam('IMAGE_TAG', 'team-b-latest', 'Image tag from CI (e.g. team-b-42)')
-             }
-             logRotator { numToKeep(20) }
-             definition {
-               cps {
-                 sandbox(true)
-                 script('''
-                 pipeline {
-                   agent {
-                     kubernetes {
-                       defaultContainer 'kubectl'
-                       yaml """
-                       apiVersion: v1
-                       kind: Pod
-                       spec:
-                         serviceAccountName: jenkins
-                         containers:
-                         - name: jnlp
-                           image: jenkins/inbound-agent
-                         - name: kubectl
-                           image: bitnami/kubectl:latest
-                           command: ["cat"]
-                           tty: true
-                           securityContext:
-                             runAsUser: 0
-                             runAsNonRoot: false
-                       """
-                     }
-                   }
-                   parameters {
-                     string(name: "IMAGE_TAG", defaultValue: "team-b-latest", description: "Image tag from CI")
-                   }
-                   environment {
-                     REGISTRY   = "amitactive2008"
-                     IMAGE_NAME = "sample-react-app-api"
-                     NAMESPACE  = "team-b"
-                     DEPLOY     = "sample-react-app-api"
-                   }
-                   options {
-                     disableConcurrentBuilds()
-                     buildDiscarder(logRotator(numToKeepStr: "20"))
-                     timeout(time: 15, unit: "MINUTES")
-                   }
-                   stages {
-                     stage("Stage 1: Update Image") {
-                       steps {
-                         sh """
-                           kubectl set image deployment/${DEPLOY} \\\\
-                             api=${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG} \\\\
-                             -n ${NAMESPACE}
-                           echo "Updated to ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}"
-                         """
-                       }
-                     }
-                     stage("Stage 2: Wait for Rollout") {
-                       steps {
-                         sh """
-                           kubectl rollout status deployment/${DEPLOY} -n ${NAMESPACE} --timeout=5m
-                           kubectl get pods -n ${NAMESPACE} -l app=sample-react-app-api
-                         """
-                       }
-                     }
-                     stage("Stage 3: Smoke Test") {
-                       steps {
-                         sh """
-                           POD=\$(kubectl get pod -l app=sample-react-app-api -n ${NAMESPACE} \\\\
-                             -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || echo "")
-                           if [ -n "\$POD" ]; then
-                             kubectl exec \$POD -n ${NAMESPACE} -c api -- wget -qO- http://localhost:5000/live && echo " ✓ /live"
-                             kubectl exec \$POD -n ${NAMESPACE} -c api -- wget -qO- http://localhost:5000/health && echo " ✓ /health"
-                           fi
-                         """
-                       }
-                     }
-                   }
-                   post {
-                     success { echo "✓ team-b API deployed: ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}" }
-                     failure { sh "kubectl get pods -n ${NAMESPACE} || true" }
-                   }
-                 }
-                 '''.stripIndent())
-               }
-             }
-           }
-    
-           // ── client/ci ────────────────────────────────────────────────
-           pipelineJob('team-b/sample-react-app/client/ci') {
-             displayName('CI')
-             description('Client CI: checkout GitHub dev branch, run npm test, build multi-platform Docker image team-b-<BUILD>, push to DockerHub, trigger CD.')
-             logRotator { numToKeep(10) }
-             definition {
-               cps {
-                 sandbox(true)
-                 script('''
-                 pipeline {
-                   agent {
-                     kubernetes {
-                       defaultContainer 'nodejs'
-                       yaml """
-                       apiVersion: v1
-                       kind: Pod
-                       spec:
-                         volumes:
-                         - name: ws
-                           emptyDir: {}
-                         containers:
-                         - name: jnlp
-                           image: jenkins/inbound-agent
-                           volumeMounts:
-                           - name: ws
-                             mountPath: /home/jenkins/agent
-                         - name: nodejs
-                           image: node:22-alpine
-                           command: ["cat"]
-                           tty: true
-                           volumeMounts:
-                           - name: ws
-                             mountPath: /home/jenkins/agent
-                         - name: docker-cli
-                           image: docker:27-cli
-                           command: ["cat"]
-                           tty: true
-                           volumeMounts:
-                           - name: ws
-                             mountPath: /home/jenkins/agent
-                       """
-                     }
-                   }
-                   environment {
-                     REGISTRY   = "amitactive2008"
-                     IMAGE_NAME = "sample-react-app-client"
-                     TEAM       = "team-b"
-                     IMAGE_TAG  = "team-b-${BUILD_NUMBER}"
-                      GIT_REPO   = "https://github.com/amitactive2008/DevSecOps-Mega-Project.git"
-                      GIT_BRANCH = "main"
-                    }
-                    options {
-                      disableConcurrentBuilds()
-                      buildDiscarder(logRotator(numToKeepStr: "10"))
-                      timeout(time: 30, unit: "MINUTES")
-                    }
-                      stages {
-                         stage("Stage 1: Checkout") {
-                           steps {
-                             // node:22-alpine does NOT have git. Run clone in 'jnlp' container
-                             // (jenkins/inbound-agent) which includes git.
-                             // Subsequent stages run in 'nodejs' (defaultContainer) for npm.
-                             container("jnlp") {
-                               sh "git clone --depth=1 --branch main https://github.com/amitactive2008/DevSecOps-Mega-Project.git . && git log --oneline -3"
-                             }
-                           }
-                         }
-                         stage("Stage 2: Unit Tests") {
-                           steps {
-                            dir("client") {
-                              sh "npm ci --prefer-offline"
-                              sh "npm test -- --coverage --watchAll=false --ci"
-                            }
-                        }
-                     }
-                     stage("Stage 3: Docker Build & Push") {
-                       steps {
-                         container("docker-cli") {
-                           dir("client") {
-                             withCredentials([usernamePassword(
-                                 credentialsId: "dockerhub",
-                                 usernameVariable: "DOCKER_USER",
-                                 passwordVariable: "DOCKER_PASS")]) {
-                               sh """
-                                 echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                                 docker buildx create --name tb-cli-bd \\\\
-                                   --driver remote \\\\
-                                   tcp://buildkitd.jenkins.svc.cluster.local:1234 \\\\
-                                   --use --bootstrap 2>/dev/null || docker buildx use tb-cli-bd
-                                 docker buildx build \\\\
-                                   --platform linux/amd64,linux/arm64 \\\\
-                                   --push \\\\
-                                   -t ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} \\\\
-                                   -t ${REGISTRY}/${IMAGE_NAME}:${TEAM}-latest \\\\
-                                   .
-                                 docker buildx rm tb-cli-bd || true
-                               """
-                             }
-                           }
-                         }
-                       }
-                     }
-                     stage("Stage 4: Trigger CD") {
-                       steps {
-                         build job: "team-b/sample-react-app/client/cd",
-                               parameters: [string(name: "IMAGE_TAG", value: "${IMAGE_TAG}")],
-                               wait: false
-                       }
-                     }
-                   }
-                   post {
-                     success { echo "✓ team-b Client CI: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" }
-                     failure { echo "✗ team-b Client CI failed" }
-                   }
-                 }
-                 '''.stripIndent())
-               }
-             }
-           }
-    
-           // ── client/cd ────────────────────────────────────────────────
-           pipelineJob('team-b/sample-react-app/client/cd') {
-             displayName('CD')
-             description('Client CD: update team-b/sample-react-app-client image, rollout, smoke test.')
-             parameters {
-               stringParam('IMAGE_TAG', 'team-b-latest', 'Image tag from CI')
-             }
-             logRotator { numToKeep(20) }
-             definition {
-               cps {
-                 sandbox(true)
-                 script('''
-                 pipeline {
-                   agent {
-                     kubernetes {
-                       defaultContainer 'kubectl'
-                       yaml """
-                       apiVersion: v1
-                       kind: Pod
-                       spec:
-                         serviceAccountName: jenkins
-                         containers:
-                         - name: jnlp
-                           image: jenkins/inbound-agent
-                         - name: kubectl
-                           image: bitnami/kubectl:latest
-                           command: ["cat"]
-                           tty: true
-                           securityContext:
-                             runAsUser: 0
-                             runAsNonRoot: false
-                       """
-                     }
-                   }
-                   parameters {
-                     string(name: "IMAGE_TAG", defaultValue: "team-b-latest", description: "Image tag from CI")
-                   }
-                   environment {
-                     REGISTRY   = "amitactive2008"
-                     IMAGE_NAME = "sample-react-app-client"
-                     NAMESPACE  = "team-b"
-                     DEPLOY     = "sample-react-app-client"
-                   }
-                   options {
-                     disableConcurrentBuilds()
-                     buildDiscarder(logRotator(numToKeepStr: "20"))
-                     timeout(time: 10, unit: "MINUTES")
-                   }
-                   stages {
-                     stage("Stage 1: Update Image") {
-                       steps {
-                         sh """
-                           kubectl set image deployment/${DEPLOY} \\\\
-                             client=${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG} \\\\
-                             -n ${NAMESPACE}
-                           echo "Updated to ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}"
-                         """
-                       }
-                     }
-                     stage("Stage 2: Wait for Rollout") {
-                       steps {
-                         sh """
-                           kubectl rollout status deployment/${DEPLOY} -n ${NAMESPACE} --timeout=5m
-                           kubectl get pods -n ${NAMESPACE} -l app=sample-react-app-client
-                         """
-                       }
-                     }
-                     stage("Stage 3: Smoke Test") {
-                       steps {
-                         sh """
-                           POD=\$(kubectl get pod -l app=sample-react-app-client -n ${NAMESPACE} \\\\
-                             -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || echo "")
-                           [ -n "\$POD" ] && \\\\
-                             kubectl exec \$POD -n ${NAMESPACE} -c client -- \\\\
-                               wget -qO- http://localhost:80/ | grep -c "DevOps" && echo " ✓" || true
-                         """
-                       }
-                     }
-                   }
-                   post {
-                     success { echo "✓ team-b Client deployed: ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG} → https://sample-react-app-team-b.kind.local" }
-                     failure { sh "kubectl get pods -n ${NAMESPACE} || true" }
-                   }
-                 }
-                 '''.stripIndent())
-               }
-              }
-            }
-    
-               // Temporary: trigger CI builds after this JCasC reload
-               // Remove after builds complete successfully
-               queue('team-b/sample-react-app/client/ci')
-               queue('team-b/sample-react-app/api/ci')
-    

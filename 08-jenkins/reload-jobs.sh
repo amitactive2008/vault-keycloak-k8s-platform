@@ -12,39 +12,67 @@
 #   Job changes NEVER require a pod restart.
 #   Only plugin/security/auth changes in jenkins-values.yaml need restart.
 #
-# USAGE:
-#   # Edit job definitions
-#   vim 08-jenkins/jenkins-jobs.yaml
+# JOB FILES (jobs/ directory — one ConfigMap per team):
+#   jobs/jenkins-jobs-devops.yaml   ← devops folder tree
+#   jobs/jenkins-jobs-team-a.yaml   ← team-a folders + pipeline jobs
+#   jobs/jenkins-jobs-team-b.yaml   ← team-b folders + pipeline jobs
 #
-#   # Apply without restart
+# USAGE:
+#   # Edit a team's job definitions
+#   vim 08-jenkins/jobs/jenkins-jobs-team-a.yaml
+#
+#   # Apply all job files (or a specific one) without restart
 #   cd 08-jenkins && ./reload-jobs.sh
-#   # or: ./reload-jobs.sh --wait    (waits for reload to complete)
+#   cd 08-jenkins && ./reload-jobs.sh --wait          # blocks until reload
+#   cd 08-jenkins && ./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml
 #
 # ============================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JOBS_CM="${SCRIPT_DIR}/jenkins-jobs.yaml"
+JOBS_DIR="${SCRIPT_DIR}/jobs"
 JENKINS_NS="jenkins"
-WAIT_MODE="${1:-}"
+WAIT_MODE=""
+SPECIFIC_FILE=""
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-info() { echo -e "${GREEN}[INFO]${NC}  $*"; }
-warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+# Parse args
+for arg in "$@"; do
+  case "$arg" in
+    --wait) WAIT_MODE="--wait" ;;
+    *.yaml|*.yml) SPECIFIC_FILE="${SCRIPT_DIR}/${arg}" ;;
+  esac
+done
+
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # ── Pre-flight ────────────────────────────────────────────────────────────────
-[ -f "$JOBS_CM" ] || { echo "ERROR: $JOBS_CM not found"; exit 1; }
-kubectl get ns "$JENKINS_NS" &>/dev/null || { echo "ERROR: namespace $JENKINS_NS not found"; exit 1; }
+kubectl get ns "$JENKINS_NS" &>/dev/null || { error "namespace $JENKINS_NS not found"; exit 1; }
+
+# Determine which files to apply
+if [ -n "$SPECIFIC_FILE" ]; then
+  FILES=("$SPECIFIC_FILE")
+else
+  mapfile -t FILES < <(find "$JOBS_DIR" -name "*.yaml" | sort)
+fi
+
+[ ${#FILES[@]} -gt 0 ] || { error "No YAML files found in $JOBS_DIR"; exit 1; }
 
 # Validate YAML before applying
-python3 -c "import yaml; yaml.safe_load(open('${JOBS_CM}')); print('YAML valid')" 2>/dev/null || {
-  echo "ERROR: $JOBS_CM is not valid YAML"; exit 1
-}
+for f in "${FILES[@]}"; do
+  python3 -c "import yaml; yaml.safe_load(open('${f}')); print('YAML valid: ${f##*/}')" 2>/dev/null || {
+    error "${f} is not valid YAML"; exit 1
+  }
+done
 
-# ── Apply ConfigMap ───────────────────────────────────────────────────────────
-info "Applying jenkins-jobs.yaml ConfigMap to namespace: $JENKINS_NS"
-kubectl apply -f "$JOBS_CM" 2>&1
-info "ConfigMap applied ✓"
+# ── Apply ConfigMaps ──────────────────────────────────────────────────────────
+info "Applying job ConfigMaps to namespace: $JENKINS_NS"
+for f in "${FILES[@]}"; do
+  kubectl apply -f "$f" 2>&1
+done
+info "All ConfigMaps applied ✓"
 
 # ── Wait for sidecar to trigger reload ───────────────────────────────────────
 info "Waiting for config-reload sidecar to detect change (~15-30 seconds)..."

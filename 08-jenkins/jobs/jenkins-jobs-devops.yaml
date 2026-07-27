@@ -1,0 +1,49 @@
+# jenkins-jobs-devops.yaml — DevOps folder tree
+#
+# Contains: devops top-level folder + all sub-folders
+#   devops/k8s, devops/terraform-module, devops/terragrunt,
+#   devops/vault, devops/keycloak
+#
+# Apply: kubectl apply -f 08-jenkins/jobs/jenkins-jobs-devops.yaml
+# OR:    cd 08-jenkins && ./reload-jobs.sh
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jenkins-jobs-devops
+  namespace: jenkins
+  labels:
+    jenkins-jenkins-config: "true"
+    app.kubernetes.io/component: jenkins-controller
+    app.kubernetes.io/instance: jenkins
+    app.kubernetes.io/name: jenkins
+data:
+  jobs-devops.yaml: |
+    jobs:
+      - script: |
+
+          // ── DevOps folder tree ───────────────────────────────────────
+          folder('devops') {
+            displayName('DevOps')
+            description('DevOps team pipelines — Full access for devops group only')
+          }
+          folder('devops/k8s') {
+            displayName('Kubernetes')
+            description('Kubernetes cluster management and deployment pipelines')
+          }
+          folder('devops/terraform-module') {
+            displayName('Terraform Modules')
+            description('Terraform module CI/CD pipelines')
+          }
+          folder('devops/terragrunt') {
+            displayName('Terragrunt')
+            description('Terragrunt deployment pipelines')
+          }
+          folder('devops/vault') {
+            displayName('Vault')
+            description('HashiCorp Vault configuration and policy pipelines')
+          }
+          folder('devops/keycloak') {
+            displayName('Keycloak')
+            description('Keycloak realm and client management pipelines')
+          }

@@ -6,12 +6,16 @@ CI/CD platform and code quality gateway on the kind cluster, authenticated via *
 
 ## Configuration split — why it matters
 
-Jenkins configuration is intentionally split into **two separate files** with different update workflows:
+Jenkins configuration is split across **separate files** with different update workflows:
 
-| File | What it contains | How to update | Restart required? |
+| File(s) | What it contains | How to update | Restart required? |
 |---|---|---|---|
 | `jenkins-values.yaml` | Security realm (OIC/Keycloak), authorization (role-strategy), Kubernetes cloud, plugins, credentials | `helm upgrade` + pod restart | **Yes** — but these rarely change |
-| **`jenkins-jobs.yaml`** | All folder and pipeline job definitions | `kubectl apply` OR `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
+| `jobs/jenkins-jobs-devops.yaml` | DevOps folder tree | `kubectl apply` OR `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
+| `jobs/jenkins-jobs-team-a.yaml` | Team A folders + pipeline jobs | `kubectl apply` OR `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
+| `jobs/jenkins-jobs-team-b.yaml` | Team B folders + pipeline jobs | `kubectl apply` OR `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
+
+Each `jobs/*.yaml` is a **separate Kubernetes ConfigMap** with a unique name and data key. The config-reload sidecar watches all of them independently — updating team-a's jobs never touches team-b's or devops's ConfigMap.
 
 ### How hot-reload works
 
@@ -20,18 +24,18 @@ The Jenkins pod runs two containers:
 - `config-reload` — a sidecar (`kiwigrid/k8s-sidecar`) that watches Kubernetes
 
 ```
-Edit jenkins-jobs.yaml
+Edit jobs/jenkins-jobs-team-a.yaml
         │
         ▼
-kubectl apply -f jenkins-jobs.yaml
-        │  (updates ConfigMap with label: jenkins-jenkins-config=true)
+kubectl apply -f jobs/jenkins-jobs-team-a.yaml
+        │  (updates ConfigMap jenkins-jobs-team-a, label: jenkins-jenkins-config=true)
         ▼
 config-reload sidecar detects ConfigMap change
-        │  copies jobs.yaml → /var/jenkins_home/casc_configs/jobs.yaml
+        │  copies jobs-team-a.yaml → /var/jenkins_home/casc_configs/jobs-team-a.yaml
         │  POSTs → http://localhost:8080/reload-configuration-as-code/
         ▼
 Jenkins reloads JCasC in-place
-        │  creates/updates folder and job definitions
+        │  creates/updates team-a folder and job definitions only
         ▼
 Done in ~15 seconds — NO RESTART ✓
 ```
@@ -39,10 +43,13 @@ Done in ~15 seconds — NO RESTART ✓
 ### When to use each update method
 
 ```bash
-# Job added / modified / deleted → NO restart
-vim 08-jenkins/jenkins-jobs.yaml
-kubectl apply -f 08-jenkins/jenkins-jobs.yaml
-# OR: cd 08-jenkins && ./reload-jobs.sh [--wait]
+# Add/modify/delete a job in team-a → NO restart
+vim 08-jenkins/jobs/jenkins-jobs-team-a.yaml
+kubectl apply -f 08-jenkins/jobs/jenkins-jobs-team-a.yaml
+# OR: cd 08-jenkins && ./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml [--wait]
+
+# Apply ALL teams at once → NO restart
+cd 08-jenkins && ./reload-jobs.sh [--wait]
 
 # Security, auth, plugins changed → restart required (rarely)
 vim 08-jenkins/jenkins-values.yaml
@@ -209,40 +216,57 @@ The script is **idempotent** — safe to re-run. It:
 
 ### Step 4 — Apply job definitions (NO restart needed)
 
-Job definitions are stored in `jenkins-jobs.yaml` (separate from Helm values) and applied independently:
+Job definitions are stored in `jobs/` (one ConfigMap per team) and applied independently:
 
 ```bash
-kubectl apply -f 08-jenkins/jenkins-jobs.yaml
+# Apply all teams at once
+kubectl apply -f 08-jenkins/jobs/
+
+# OR apply only one team
+kubectl apply -f 08-jenkins/jobs/jenkins-jobs-team-a.yaml
 ```
 
-The `config-reload` sidecar detects the ConfigMap change and reloads JCasC in ~15 seconds.  
+The `config-reload` sidecar detects each ConfigMap change and reloads JCasC in ~15 seconds.  
 All folders and pipeline jobs appear in Jenkins without any pod restart.
 
 ---
 
 ## Managing jobs (no restart workflow)
 
+Job files live in `08-jenkins/jobs/` — one file per team:
+
+```
+jobs/
+├── jenkins-jobs-devops.yaml   ← devops folder tree (k8s, vault, keycloak…)
+├── jenkins-jobs-team-a.yaml   ← team-a: sample-react-app api+client ci/cd
+└── jenkins-jobs-team-b.yaml   ← team-b: sample-react-app api+client ci/cd
+```
+
 This is the everyday workflow for adding, modifying, or removing Jenkins jobs:
 
 ```bash
-# 1. Edit job definitions
-vim 08-jenkins/jenkins-jobs.yaml
+# 1. Edit the relevant team's file
+vim 08-jenkins/jobs/jenkins-jobs-team-a.yaml
 
-# 2. Apply — sidecar auto-reloads JCasC within 15 seconds
-kubectl apply -f 08-jenkins/jenkins-jobs.yaml
+# 2a. Apply just that team — sidecar auto-reloads JCasC within 15 seconds
+kubectl apply -f 08-jenkins/jobs/jenkins-jobs-team-a.yaml
 
-# OR use the helper script (validates YAML, shows job list after reload)
+# 2b. Or apply all teams at once
+kubectl apply -f 08-jenkins/jobs/
+
+# 2c. Use the helper script (validates YAML, applies all, shows job list)
 cd 08-jenkins && ./reload-jobs.sh
-
-# To wait for confirmation the reload completed:
-./reload-jobs.sh --wait
+cd 08-jenkins && ./reload-jobs.sh --wait                              # block until done
+cd 08-jenkins && ./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml      # specific file
 ```
 
 ### What triggers each update method
 
 | Change type | File to edit | Update command | Restart? |
 |---|---|---|---|
-| Add/modify/delete a job or folder | `jenkins-jobs.yaml` | `kubectl apply` | No |
+| Add/modify/delete a devops job or folder | `jobs/jenkins-jobs-devops.yaml` | `kubectl apply` | No |
+| Add/modify/delete a team-a job or folder | `jobs/jenkins-jobs-team-a.yaml` | `kubectl apply` | No |
+| Add/modify/delete a team-b job or folder | `jobs/jenkins-jobs-team-b.yaml` | `kubectl apply` | No |
 | Change authorization roles (e.g. anonymous access) | `jenkins-values.yaml` | `helm upgrade` (updates ConfigMap → config-reload applies automatically) | No |
 | Change security/auth (OIC config, plugins) | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
 | Add/remove a plugin | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
