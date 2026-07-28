@@ -65,7 +65,15 @@ The `kind.yaml` defines a 1 control-plane + 3 worker cluster with **no** `extraP
 kind create cluster --config kind.yaml
 kind export kubeconfig --name vault
 
-kind export kubeconfig --name vault --kubeconfig ./vault-config
+kind export kubeconfig --name vault --kubeconfig ./vault-kube-config
+
+In our up comimg examples 08-jenkins setup we will be using this file as kind cluster credentails. 
+
+Since I am using local kind cluster, Please change api server endpoint to https://kubernetes.default.svc:443
+
+sed -i 's|^[[:space:]]*server:.*|    server: https://kubernetes.default.svc:443|' vault-kube-config
+
+
 ```
 
 Verify all nodes are Ready:
