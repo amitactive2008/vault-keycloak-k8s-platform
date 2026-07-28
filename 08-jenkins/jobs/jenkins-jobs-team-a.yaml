@@ -119,8 +119,7 @@ data:
               cpsScm {
                 scm {
                   git {
-                    remote { url('https://github.com/amitactive2008/vault-keycloak-k8s-platform
-.git') }
+                    remote { url('https://github.com/amitactive2008/vault-keycloak-k8s-platform.git') }
                     branches('*/v4-gwApi-certmanager-jenkins-sampleapp-argocd')
                   }
                 }
