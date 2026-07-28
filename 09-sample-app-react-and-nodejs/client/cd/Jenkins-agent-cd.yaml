@@ -1,20 +1,17 @@
 apiVersion: v1
 kind: Pod
 spec:
+  # All containers share the same workspace volume.
+  # fsGroup 1000 ensures dirs created by jnlp (uid 1000) are group-writable,
+  # so the kubectl container (also uid 0 below) can write durable task scripts.
+  securityContext:
+    fsGroup: 1000
 
   volumes:
     - name: workspace-volume
       emptyDir: {}
 
-    - name: buildkit-certs
-      secret:
-        secretName: buildkit-client-certs
-
-    - name: dependency-check-data
-      persistentVolumeClaim:
-        claimName: dependency-check-data
-
-  containers: 
+  containers:
     - name: jnlp
       image: jenkins/inbound-agent
       args:
@@ -24,67 +21,17 @@ spec:
         - name: workspace-volume
           mountPath: /home/jenkins/agent
 
-    - name: nodejs
-      image: node:latest
-      command: ["cat"]
-      tty: true
-      volumeMounts:
-        - name: workspace-volume
-          mountPath: /home/jenkins/agent
-
-    - name: gitleaks
-      image: zricethezav/gitleaks:latest
-      command: ["cat"]
-      tty: true
-      volumeMounts:
-        - name: workspace-volume
-          mountPath: /home/jenkins/agent
-
-    - name: dependency-check
-      image: owasp/dependency-check:latest
-      command: ["cat"]
-      tty: true
-      volumeMounts:
-        - name: workspace-volume
-          mountPath: /home/jenkins/agent
-        - name: dependency-check-data
-          mountPath: /dependency-check-data
-
-    - name: sonar
-      image: sonarsource/sonar-scanner-cli:latest
-      command: ["cat"]
-      tty: true
-      volumeMounts:
-        - name: workspace-volume
-          mountPath: /home/jenkins/agent
-
-    - name: docker-cli
-      image: waynewu411/docker-cli:1.0 
-      command: ["cat"]
-      tty: true
-      volumeMounts:
-        - name: workspace-volume
-          mountPath: /home/jenkins/agent
-
-        - name: buildkit-certs
-          mountPath: /certs
-          readOnly: true
-
-    - name: trivy
-      image: aquasec/trivy:latest
-      command: ["cat"]
-      tty: true
-      volumeMounts:
-        - name: workspace-volume
-          mountPath: /home/jenkins/agent
-
     - name: kubectl
       image: bitnami/kubectl:latest
       command: ["cat"]
       tty: true
+      # Run as root so Jenkins durable-task sh scripts can be written to
+      # workspace/@tmp dirs created by jnlp (uid 1000, mode 755).
+      securityContext:
+        runAsUser: 0
       volumeMounts:
         - name: workspace-volume
-          mountPath: /home/jenkins/agent/
+          mountPath: /home/jenkins/agent
 
         
     
