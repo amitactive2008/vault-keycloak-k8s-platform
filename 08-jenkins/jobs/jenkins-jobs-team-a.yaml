@@ -119,11 +119,12 @@ data:
               cpsScm {
                 scm {
                   git {
-                    remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
-                    branches('*/main')
+                    remote { url('https://github.com/amitactive2008/vault-keycloak-k8s-platform
+.git') }
+                    branches('*/v4-gwApi-certmanager-jenkins-sampleapp-argocd')
                   }
                 }
-                scriptPath('jenkins/Jenkinsfile-cd-local')
+                scriptPath('09-sample-app-react-and-nodejs/client/cd/Jenkinsfile')
                 lightweight(true)
               }
             }
