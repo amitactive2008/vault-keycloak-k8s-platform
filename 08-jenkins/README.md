@@ -10,10 +10,11 @@ Jenkins configuration is split across **separate files** with different update w
 
 | File(s) | What it contains | How to update | Restart required? |
 |---|---|---|---|
-| `jenkins-values.yaml` | Security realm (OIC/Keycloak), authorization (role-strategy), Kubernetes cloud, plugins, credentials | `helm upgrade` + pod restart | **Yes** — but these rarely change |
-| `jobs/jenkins-jobs-devops.yaml` | DevOps folder tree | `kubectl apply` OR `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
-| `jobs/jenkins-jobs-team-a.yaml` | Team A folders + pipeline jobs | `kubectl apply` OR `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
-| `jobs/jenkins-jobs-team-b.yaml` | Team B folders + pipeline jobs | `kubectl apply` OR `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
+| `jenkins-values.yaml` | Security realm (OIC/Keycloak), authorization (role-strategy), Kubernetes cloud, plugins, JCasC credential definitions | `helm upgrade` + pod restart | **Yes** — but these rarely change |
+| `setup/credentials.yaml` | Runtime secrets: DockerHub, NVD API key, `external-kubeconfig` kubeconfig | `kubectl apply` + pod restart | **Yes** — env vars injected at startup |
+| `jobs/jenkins-jobs-devops.yaml` | DevOps folder tree | `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
+| `jobs/jenkins-jobs-team-a.yaml` | Team A folders + pipeline jobs | `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
+| `jobs/jenkins-jobs-team-b.yaml` | Team B folders + pipeline jobs | `./reload-jobs.sh` | **No** — sidecar hot-reloads in ~15 s |
 
 Each `jobs/*.yaml` is a **separate Kubernetes ConfigMap** with a unique name and data key. The config-reload sidecar watches all of them independently — updating team-a's jobs never touches team-b's or devops's ConfigMap.
 
@@ -183,14 +184,38 @@ Jenkins
 sudo sh -c 'echo "127.0.0.1 jenkins.kind.local sonarqube.kind.local" >> /etc/hosts'
 ```
 
-### Step 2 — Fill in real credentials (optional)
+### Step 2 — Fill in real credentials
 
-Copy and edit the credentials file:
+Edit the credentials file with your actual values:
 
 ```bash
-cp 08-jenkins/setup/credentials-template.yaml 08-jenkins/setup/credentials.yaml
-# Edit: DOCKERHUB_USERNAME, DOCKERHUB_PASSWORD, NVD_API_KEY
+# The file already exists — edit it directly
+vim 08-jenkins/setup/credentials.yaml
 ```
+
+The Secret contains three credentials:
+
+| Key | Purpose | Default |
+|-----|---------|---------|
+| `DOCKERHUB_USERNAME` / `DOCKERHUB_PASSWORD` | DockerHub push access for pipeline builds | `amitactive2008` / set yours |
+| `NVD_API_KEY` | OWASP Dependency-Check NVD database (free key at nvd.nist.gov) | set yours |
+| `EXTERNAL_KUBECONFIG_B64` | Base64-encoded kubeconfig for the vault kind cluster (`external-kubeconfig` credential in Jenkins) | sourced from `01-cloud-provider-kind-setup-with-gw-api/vault-config` |
+
+Apply the Secret:
+
+```bash
+kubectl apply -f 08-jenkins/setup/credentials.yaml
+```
+
+> **Updating the kubeconfig** — if the vault cluster's kubeconfig changes, regenerate `EXTERNAL_KUBECONFIG_B64`:
+> ```bash
+> base64 -i 01-cloud-provider-kind-setup-with-gw-api/vault-config | tr -d '\n'
+> ```
+> Paste the output as the `EXTERNAL_KUBECONFIG_B64` value in `credentials.yaml`, then re-apply the Secret and restart the pod:
+> ```bash
+> kubectl apply -f 08-jenkins/setup/credentials.yaml
+> kubectl delete pod jenkins-0 -n jenkins
+> ```
 
 ### Step 3 — Run setup.sh
 
@@ -322,14 +347,75 @@ kubectl exec -n jenkins jenkins-0 -c jenkins -- \
 
 | Change type | File to edit | Update command | Restart? |
 |---|---|---|---|
-| Add/modify/delete a devops job or folder | `jobs/jenkins-jobs-devops.yaml` | `kubectl apply` | No |
-| Add/modify/delete a team-a job or folder | `jobs/jenkins-jobs-team-a.yaml` | `kubectl apply` | No |
-| Add/modify/delete a team-b job or folder | `jobs/jenkins-jobs-team-b.yaml` | `kubectl apply` | No |
+| Add/modify/delete a devops job or folder | `jobs/jenkins-jobs-devops.yaml` | `./reload-jobs.sh` | No |
+| Add/modify/delete a team-a job or folder | `jobs/jenkins-jobs-team-a.yaml` | `./reload-jobs.sh` | No |
+| Add/modify/delete a team-b job or folder | `jobs/jenkins-jobs-team-b.yaml` | `./reload-jobs.sh` | No |
+| Update DockerHub / NVD / kubeconfig credentials | `setup/credentials.yaml` | `kubectl apply` + `kubectl delete pod jenkins-0 -n jenkins` | Yes |
 | Change authorization roles (e.g. anonymous access) | `jenkins-values.yaml` | `helm upgrade` (updates ConfigMap → config-reload applies automatically) | No |
 | Change security/auth (OIC config, plugins) | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
 | Add/remove a plugin | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
 | Change Kubernetes cloud config | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
-| Change credentials/SonarQube config | `jenkins-values.yaml` | `helm upgrade` + `kubectl delete pod` | Yes |
+
+---
+
+## Credentials
+
+All runtime secrets are stored in a single Kubernetes Secret (`jenkins-credentials`) and injected as environment variables into the Jenkins pod. JCasC reads them at startup using `${ENV_VAR}` interpolation.
+
+### Defined credentials
+
+| Jenkins Credential ID | Type | Source key in Secret | Used by |
+|---|---|---|---|
+| `dockerhub` | Username/Password | `DOCKERHUB_USERNAME` / `DOCKERHUB_PASSWORD` | Pipeline `docker build` / `docker push` steps |
+| `NVD_API_KEY` | Secret Text | `NVD_API_KEY` | OWASP Dependency-Check plugin |
+| `sonarqube-token` | Secret Text | `SONARQUBE_TOKEN` (from `sonarqube-token` Secret) | SonarQube scanner |
+| `external-kubeconfig` | Secret File (`config`) | `EXTERNAL_KUBECONFIG_B64` | `kubectl` steps targeting the vault kind cluster |
+
+### Using `external-kubeconfig` in a pipeline
+
+```groovy
+withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
+    sh 'kubectl get nodes --kubeconfig=$KUBECONFIG'
+}
+```
+
+> **Note:** The kubeconfig has `server: https://127.0.0.1:6443` (the local kind API server address). This works only when Jenkins can reach the vault cluster's API. Update the `server:` field in the kubeconfig if the cluster is accessible at a different IP/hostname from inside the Jenkins pod.
+
+### Updating the kubeconfig (`external-kubeconfig`)
+
+The kubeconfig is sourced from `01-cloud-provider-kind-setup-with-gw-api/vault-config`. To refresh it after the cluster is recreated:
+
+```bash
+# 1. Regenerate the base64 value
+KUBECONFIG_B64=$(base64 -i 01-cloud-provider-kind-setup-with-gw-api/vault-config | tr -d '\n')
+
+# 2. Update EXTERNAL_KUBECONFIG_B64 in credentials.yaml with the new value
+vim 08-jenkins/setup/credentials.yaml
+
+# 3. Apply and restart
+kubectl apply -f 08-jenkins/setup/credentials.yaml
+kubectl delete pod jenkins-0 -n jenkins
+kubectl wait pod -n jenkins -l app.kubernetes.io/component=jenkins-controller \
+  --for=condition=Ready --timeout=300s
+```
+
+### Verify credentials in Jenkins
+
+```bash
+kubectl exec -n jenkins jenkins-0 -c jenkins -- \
+  curl -sf -u "admin:Admin@Jenkins2024!" \
+  "http://localhost:8080/credentials/store/system/domain/_/api/json?depth=1" \
+  | python3 -c "
+import json,sys
+for c in json.load(sys.stdin).get('credentials',[]):
+    print(f\"  {c['id']:30s} {c['typeName']}\")
+"
+# Expected output:
+#   dockerhub                      Username with password
+#   NVD_API_KEY                    Secret text
+#   sonarqube-token                Secret text
+#   external-kubeconfig            Secret file
+```
 
 ---
 
@@ -388,6 +474,16 @@ kubectl exec -n jenkins deployment/jenkins -c jenkins -- \
 curl -su admin:Admin@Jenkins2024! \
   https://jenkins.kind.local/api/json?tree=jobs[name,jobs[name]] \
   | python3 -m json.tool
+
+# Verify all 4 credentials exist
+kubectl exec -n jenkins jenkins-0 -c jenkins -- \
+  curl -sf -u "admin:Admin@Jenkins2024!" \
+  "http://localhost:8080/credentials/store/system/domain/_/api/json?depth=1" \
+  | python3 -c "
+import json,sys
+for c in json.load(sys.stdin).get('credentials',[]):
+    print(f\"  {c['id']:30s} {c['typeName']}\")
+"
 ```
 
 ---

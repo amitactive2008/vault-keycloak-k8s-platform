@@ -116,13 +116,20 @@ controller:
           name: sonarqube-token
           key: token
           optional: true
+    - name: EXTERNAL_KUBECONFIG_B64
+      valueFrom:
+        secretKeyRef:
+          name: jenkins-credentials
+          key: EXTERNAL_KUBECONFIG_B64
 
   # ── Plugins ────────────────────────────────────────────────────────────────
-  # oic-auth    : Keycloak OIDC authentication
-  # role-strategy: folder-level RBAC
-  # cloudbees-folder: nested folder support
+  # oic-auth           : Keycloak OIDC authentication
+  # role-strategy      : folder-level RBAC
+  # cloudbees-folder   : nested folder support
+  # kubernetes-credentials: kubeconfig credential type (kubeconfigContent in JCasC)
   installPlugins:
     - kubernetes:latest
+    - kubernetes-credentials:latest
     - workflow-aggregator:latest
     - git:latest
     - configuration-as-code:latest
@@ -304,6 +311,12 @@ controller:
                       id: "sonarqube-token"
                       description: "SonarQube global analysis token"
                       secret: "${SONARQUBE_TOKEN}"
+                      scope: GLOBAL
+                  - file:
+                      id: "external-kubeconfig"
+                      description: "Kubeconfig for vault kind cluster (kind-vault)"
+                      fileName: "config"
+                      secretBytes: "${EXTERNAL_KUBECONFIG_B64}"
                       scope: GLOBAL
         unclassified:
           sonarGlobalConfiguration:
