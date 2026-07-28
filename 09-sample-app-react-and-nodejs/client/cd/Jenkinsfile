@@ -29,18 +29,17 @@ pipeline {
     }
   stage('Stage 2: Setup Kubeconfig') {
             steps {
-                echo "Configuring cluster access..."
-                // Use withCredentials if your kubeconfig is stored as a Jenkins Secret File ID
-                // withCredentials([file(credentialsId: 'my-kubeconfig-credential-id', variable: 'KUBECONFIG')]) {
-                //     sh 'kubectl cluster-info'
-                // }
-                
-                // Alternatively, if generating or copying it dynamically in the pod:
-                sh '''
-                    mkdir -p ~/.kube
-                    # Add your command to fetch kubeconfig here if using an external cluster, e.g.:
-                    # aws eks update-kubeconfig --name my-cluster --region us-east-1
-                '''
+                echo "Deploying to External Cluster..."
+                // Bind the secret file to the KUBECONFIG environment variable
+                withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        # Migration job is immutable — must delete before re-apply
+                        kubectl delete job database-migration -n team-a --ignore-not-found
+                        
+                        # Apply the full local overlay to the external cluster
+                        kubectl apply -k 09-sample-app-react-and-nodejs/kubernetes/overlays/local
+                    '''
+                }
             }
         }
     stage('Stage 3: Update Image Tags') {
