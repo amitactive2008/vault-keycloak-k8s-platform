@@ -29,7 +29,7 @@ pipeline {
     }
   stage('Stage 2: Setup Kubeconfig') {
             steps {
-                echo "Deploying to External Cluster..."
+                echo "Deploying to kind Cluster..."
                 // Bind the secret file to the KUBECONFIG environment variable
                 withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
@@ -63,10 +63,10 @@ pipeline {
 
     stage('Stage 4: Deploy') {
       steps {
-        echo "Deploying to local Kind cluster (namespace: local)..."
+        echo "Deploying to Kind cluster (namespace: team-a)..."
         sh '''
           # Migration job is immutable — must delete before re-apply
-          kubectl delete job database-migration -n local --ignore-not-found
+          kubectl delete job database-migration -n team-a --ignore-not-found
 
           # Apply the full local overlay
           kubectl apply -k 09-sample-app-react-and-nodejs/kubernetes/overlays/local
@@ -78,8 +78,8 @@ pipeline {
       steps {
         echo "Waiting for rollout to complete..."
         sh '''
-          kubectl rollout status deployment/api-deployment    -n local --timeout=5m
-          kubectl rollout status deployment/client-deployment -n local --timeout=5m
+          kubectl rollout status deployment/api-deployment    -n team-a --timeout=5m
+          kubectl rollout status deployment/client-deployment -n team-a --timeout=5m
 
           echo ""
           echo "=== Deployed Pods ==="
