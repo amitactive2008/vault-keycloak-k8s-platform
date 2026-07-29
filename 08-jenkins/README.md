@@ -178,10 +178,12 @@ Jenkins
 
 ## Installation
 
-### Step 1 — Add DNS entries
+### Step 1 — Add DNS entries and Create jenkisn NS
 
 ```bash
 sudo sh -c 'echo "127.0.0.1 jenkins.kind.local sonarqube.kind.local" >> /etc/hosts'
+
+kubectl create ns jenkins
 ```
 
 ### Step 2 — Fill in real credentials
@@ -199,7 +201,7 @@ The Secret contains three credentials:
 |-----|---------|---------|
 | `DOCKERHUB_USERNAME` / `DOCKERHUB_PASSWORD` | DockerHub push access for pipeline builds | `amitactive2008` / set yours |
 | `NVD_API_KEY` | OWASP Dependency-Check NVD database (free key at nvd.nist.gov) | set yours |
-| `EXTERNAL_KUBECONFIG_B64` | Base64-encoded kubeconfig for the vault kind cluster (`external-kubeconfig` credential in Jenkins) | sourced from `01-cloud-provider-kind-setup-with-gw-api/vault-config` |
+| `EXTERNAL_KUBECONFIG_B64` | Base64-encoded kubeconfig for the vault kind cluster (`external-kubeconfig` credential in Jenkins) | sourced from `01-cloud-provider-kind-setup-with-gw-api/vault-kube-config` |
 
 Apply the Secret:
 
@@ -207,9 +209,15 @@ Apply the Secret:
 kubectl apply -f 08-jenkins/setup/credentials.yaml
 ```
 
-> **Updating the kubeconfig** — if the vault cluster's kubeconfig changes, regenerate `EXTERNAL_KUBECONFIG_B64`:
+> **Updating the kubeconfig** — after creating or recreating the vault cluster,
+> export a fresh kubeconfig and replace its host-only API endpoint with the
+> in-cluster Kubernetes service before encoding it:
 > ```bash
-> base64 -i 01-cloud-provider-kind-setup-with-gw-api/vault-config | tr -d '\n'
+> KUBECONFIG_FILE=01-cloud-provider-kind-setup-with-gw-api/vault-kube-config
+> kind export kubeconfig --name vault --kubeconfig "$KUBECONFIG_FILE"
+> KUBECONFIG="$KUBECONFIG_FILE" kubectl config set-cluster kind-vault \
+>   --server=https://kubernetes.default.svc:443
+> base64 < "$KUBECONFIG_FILE" | tr -d '\n'
 > ```
 > Paste the output as the `EXTERNAL_KUBECONFIG_B64` value in `credentials.yaml`, then re-apply the Secret and restart the pod:
 > ```bash
@@ -379,20 +387,31 @@ withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFI
 }
 ```
 
-> **Note:** The kubeconfig has `server: https://127.0.0.1:6443` (the local kind API server address). This works only when Jenkins can reach the vault cluster's API. Update the `server:` field in the kubeconfig if the cluster is accessible at a different IP/hostname from inside the Jenkins pod.
+> **Note:** The Jenkins kubeconfig must use
+> `server: https://kubernetes.default.svc:443`. The host-only kind endpoint
+> `https://127.0.0.1:6443` points back to the Jenkins pod when used in a
+> pipeline and cannot reach the API server.
 
 ### Updating the kubeconfig (`external-kubeconfig`)
 
-The kubeconfig is sourced from `01-cloud-provider-kind-setup-with-gw-api/vault-config`. To refresh it after the cluster is recreated:
+The kubeconfig is sourced from
+`01-cloud-provider-kind-setup-with-gw-api/vault-kube-config`. Refresh it after
+the cluster is recreated:
 
 ```bash
-# 1. Regenerate the base64 value
-KUBECONFIG_B64=$(base64 -i 01-cloud-provider-kind-setup-with-gw-api/vault-config | tr -d '\n')
+# 1. Export current credentials and use the in-cluster API endpoint
+KUBECONFIG_FILE=01-cloud-provider-kind-setup-with-gw-api/vault-kube-config
+kind export kubeconfig --name vault --kubeconfig "$KUBECONFIG_FILE"
+KUBECONFIG="$KUBECONFIG_FILE" kubectl config set-cluster kind-vault \
+  --server=https://kubernetes.default.svc:443
 
-# 2. Update EXTERNAL_KUBECONFIG_B64 in credentials.yaml with the new value
+# 2. Regenerate the base64 value
+KUBECONFIG_B64=$(base64 < "$KUBECONFIG_FILE" | tr -d '\n')
+
+# 3. Update EXTERNAL_KUBECONFIG_B64 in credentials.yaml with the new value
 vim 08-jenkins/setup/credentials.yaml
 
-# 3. Apply and restart
+# 4. Apply and restart
 kubectl apply -f 08-jenkins/setup/credentials.yaml
 kubectl delete pod jenkins-0 -n jenkins
 kubectl wait pod -n jenkins -l app.kubernetes.io/component=jenkins-controller \
