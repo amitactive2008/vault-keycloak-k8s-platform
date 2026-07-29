@@ -29,6 +29,68 @@ Backend services (Vault, Keycloak, etc.)
 
 ---
 
+## Gateway API CRD Overview
+
+### What are Gateway API CRDs?
+
+The [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io/) is a set of Custom Resource Definitions (CRDs) that standardise how traffic routing is configured in Kubernetes. They are the successor to the older `networking.k8s.io/v1/Ingress` API and provide richer, role-oriented routing primitives.
+
+The key CRDs installed (standard channel) are:
+
+| CRD | API Group | Purpose |
+|---|---|---|
+| `GatewayClass` | `gateway.networking.k8s.io` | Defines a class of gateway implementations (e.g. `envoy-gateway`) |
+| `Gateway` | `gateway.networking.k8s.io` | Represents a running gateway instance with named listeners (HTTP/HTTPS) |
+| `HTTPRoute` | `gateway.networking.k8s.io` | Defines HTTP routing rules from a Gateway listener to backend Services |
+| `ReferenceGrant` | `gateway.networking.k8s.io` | Allows cross-namespace routing (e.g. HTTPRoute in `vault` ns → Gateway in `default` ns) |
+| `GRPCRoute` | `gateway.networking.k8s.io` | Routes gRPC traffic (standard channel v1.1+) |
+
+### Standard vs Experimental Channel
+
+The Gateway API project ships two CRD bundles:
+
+| Channel | Stability | Includes |
+|---|---|---|
+| **standard** | GA / v1 | `Gateway`, `GatewayClass`, `HTTPRoute`, `ReferenceGrant`, `GRPCRoute` |
+| **experimental** | Alpha / Beta | All standard CRDs + `TCPRoute`, `TLSRoute`, `UDPRoute`, `BackendLBPolicy`, etc. |
+
+This setup uses the **standard** channel. It covers all production HTTP/HTTPS routing needs. The experimental channel is only required for advanced L4 (TCP/UDP/TLS) routing scenarios.
+
+### Who Installs and Manages the CRDs?
+
+**`cloud-provider-kind` owns and manages the Gateway API CRDs** in this setup.
+
+When you run `cloud-provider-kind --gateway-channel standard`, it:
+
+1. Downloads the standard-channel CRD bundle from the Gateway API project
+2. Applies all CRDs to the cluster
+3. Registers the `cloud-provider-kind` GatewayClass controller
+4. Reconciles and manages CRD versions going forward
+
+### Why You Must NOT Manually Apply the CRD Bundle
+
+> **Troubleshooting origin**: This was discovered during initial cluster setup when manually applying the CRD bundle caused subtle, hard-to-debug failures.
+
+The official Gateway API release page provides a `standard-install.yaml` that can be applied with `kubectl apply`. **Do not use this** alongside cloud-provider-kind.
+
+The bundle includes a `safe-upgrades` ValidatingAdmissionPolicy that **blocks any controller** — including cloud-provider-kind — from modifying or upgrading the CRDs:
+
+```bash
+# ❌ DO NOT run this — installs safe-upgrades policy that breaks cloud-provider-kind
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.1/standard-install.yaml
+
+# ✅ Correct — let cloud-provider-kind manage CRDs via --gateway-channel standard
+sudo cloud-provider-kind --gateway-channel standard --enable-lb-port-mapping
+```
+
+Symptoms of accidentally applied `safe-upgrades` policy:
+- cloud-provider-kind logs show errors updating CRDs at startup
+- `kubectl apply` of gateway resources returns admission webhook validation errors
+- Envoy Gateway Helm install fails with CRD version conflict messages
+- `kubectl get validatingadmissionpolicy` lists `safe-upgrades.gateway.networking.k8s.io`
+
+---
+
 ## Step 1: Configure Podman for Rootful Mode
 
 Kind requires root permissions inside Podman to manage internal container networking and allow cloud-provider-kind to route traffic natively.
@@ -64,16 +126,15 @@ The `kind.yaml` defines a 1 control-plane + 3 worker cluster with **no** `extraP
 ```bash
 kind create cluster --config kind.yaml
 kind export kubeconfig --name vault
+```
 
+For the 08-jenkins setup, a kubeconfig with the in-cluster API server address is needed:
+
+```bash
 kind export kubeconfig --name vault --kubeconfig ./vault-kube-config
 
-In our up comimg examples 08-jenkins setup we will be using this file as kind cluster credentails. 
-
-Since I am using local kind cluster, Please change api server endpoint to https://kubernetes.default.svc:443
-
+# Change API server endpoint to in-cluster address (used by Jenkins)
 sed -i 's|^[[:space:]]*server:.*|    server: https://kubernetes.default.svc:443|' vault-kube-config
-
-
 ```
 
 Verify all nodes are Ready:
@@ -82,21 +143,67 @@ Verify all nodes are Ready:
 kubectl get nodes
 ```
 
-## Step 4: Start cloud-provider-kind
+## Step 4: Start cloud-provider-kind and Install Gateway API CRDs
 
-Run this in a **dedicated terminal window** and keep it running for the lifetime of the cluster. It installs Gateway API CRDs, registers the `cloud-provider-kind` GatewayClass, and manages LoadBalancer IP and port assignment.
+Run this in a **dedicated terminal window** and keep it running for the lifetime of the cluster.
+
+The `--gateway-channel standard` flag instructs cloud-provider-kind to automatically download and apply the **standard-channel** Gateway API CRD bundle. This is the **only** supported way to install these CRDs in this setup — do not apply the CRD bundle manually.
 
 ```bash
 sudo cloud-provider-kind --gateway-channel standard --enable-lb-port-mapping
 ```
 
-Verify the GatewayClass is registered:
+> **Keep this terminal open** for the entire lifetime of the cluster. cloud-provider-kind must stay running to:
+> - Assign LoadBalancer ClusterIPs/ExternalIPs to Services
+> - Bind host ports (80/443) via its kindccm Envoy containers
+> - Keep the `cloud-provider-kind` GatewayClass in `Accepted` state
+>
+> Stopping cloud-provider-kind will make all external traffic stop working.
+
+### Verify Gateway API CRDs are Installed
+
+In a second terminal, confirm the CRDs are present:
+
+```bash
+kubectl get crds | grep gateway.networking.k8s.io
+```
+
+Expected output (standard channel):
+
+```
+gatewayclasses.gateway.networking.k8s.io       2024-xx-xx
+gateways.gateway.networking.k8s.io             2024-xx-xx
+grpcroutes.gateway.networking.k8s.io           2024-xx-xx
+httproutes.gateway.networking.k8s.io           2024-xx-xx
+referencegrants.gateway.networking.k8s.io      2024-xx-xx
+```
+
+Verify the `cloud-provider-kind` GatewayClass is registered and accepted:
 
 ```bash
 kubectl get gatewayclass
 # NAME                  CONTROLLER                            ACCEPTED
 # cloud-provider-kind   kind.sigs.k8s.io/gateway-controller   True
 ```
+
+Check the installed Gateway API version:
+
+```bash
+kubectl get crd gateways.gateway.networking.k8s.io \
+  -o jsonpath='{.metadata.annotations.gateway\.networking\.k8s\.io/bundle-version}'
+# e.g. v1.1.0 or v1.2.0
+```
+
+### Verify No Conflicting ValidatingAdmissionPolicy
+
+If the standard CRD bundle was previously applied manually, a blocking policy may be present:
+
+```bash
+kubectl get validatingadmissionpolicy | grep safe-upgrades
+kubectl get validatingadmissionpolicybinding | grep safe-upgrades
+```
+
+If either returns results, remove them before proceeding (see Troubleshooting).
 
 ## Step 5: Install Envoy Gateway
 
@@ -109,6 +216,8 @@ helm install eg oci://docker.io/envoyproxy/gateway-helm \
   --create-namespace \
   --skip-crds
 ```
+
+> **Why `--skip-crds`?** The Envoy Gateway Helm chart bundles its own copy of the Gateway API CRDs. Without `--skip-crds`, Helm would attempt to apply them on top of cloud-provider-kind's CRDs, causing version conflicts or re-installing the `safe-upgrades` ValidatingAdmissionPolicy. Always use `--skip-crds` when the CRDs are already managed by cloud-provider-kind.
 
 Wait for the controller to be ready:
 
@@ -292,15 +401,87 @@ The Envoy Gateway controller is not running. Check:
 kubectl get pods -n envoy-gateway-system
 ```
 
+**Gateway API CRDs not installed (empty result from `kubectl get crds | grep gateway`)**
+
+cloud-provider-kind may have failed to download the CRD bundle, or it was started without `--gateway-channel standard`.
+
+```bash
+# Check that the flag was passed
+ps aux | grep cloud-provider-kind
+# Expected: cloud-provider-kind --gateway-channel standard --enable-lb-port-mapping
+
+# Check cloud-provider-kind terminal for download errors
+# Restart with correct flags:
+sudo cloud-provider-kind --gateway-channel standard --enable-lb-port-mapping
+```
+
+If the cluster is fresh and CRDs are still missing after a clean start:
+
+```bash
+# Manually verify which CRDs are present
+kubectl get crds | grep gateway.networking.k8s.io
+
+# Check if a ValidatingAdmissionPolicy is blocking the installation
+kubectl get validatingadmissionpolicy
+```
+
 **`safe-upgrades` ValidatingAdmissionPolicy blocking CRD updates**
 
-This policy is installed if you manually apply the Gateway API standard CRD bundle.
-Do not apply external GW API CRD manifests — let cloud-provider-kind manage them via
-`--gateway-channel standard`. If you accidentally applied such a manifest, remove the policy:
+This is the most common and hardest-to-debug CRD issue. It occurs when the Gateway API standard CRD bundle is manually applied (e.g. from the `kubernetes-sigs/gateway-api` releases page). The bundle includes a `safe-upgrades` ValidatingAdmissionPolicy that prevents **any** controller — including cloud-provider-kind — from modifying the CRDs.
+
+Symptoms:
+- cloud-provider-kind prints CRD update errors at startup
+- `kubectl apply -f gateway-infra.yaml` fails with admission webhook errors
+- Envoy Gateway Helm install fails with version conflict messages
+- `kubectl get gatewayclass cloud-provider-kind` shows `Unknown` or never reaches `Accepted`
+
+Diagnosis:
+
+```bash
+kubectl get validatingadmissionpolicy | grep safe-upgrades
+kubectl get validatingadmissionpolicybinding | grep safe-upgrades
+```
+
+Fix:
 
 ```bash
 kubectl delete validatingadmissionpolicybinding safe-upgrades.gateway.networking.k8s.io --ignore-not-found
 kubectl delete validatingadmissionpolicy safe-upgrades.gateway.networking.k8s.io --ignore-not-found
+
+# Verify removed
+kubectl get validatingadmissionpolicy | grep safe-upgrades
+# (should return nothing)
+
+# Restart cloud-provider-kind (Ctrl+C existing, then):
+sudo cloud-provider-kind --gateway-channel standard --enable-lb-port-mapping
+```
+
+**Envoy Gateway Helm install fails with CRD errors**
+
+If `--skip-crds` was omitted during Envoy Gateway installation:
+
+```bash
+# Uninstall
+helm uninstall eg -n envoy-gateway-system
+
+# Check for safe-upgrades policy (may have been re-installed by the Helm chart)
+kubectl get validatingadmissionpolicy | grep safe-upgrades
+# If present, remove it (see above)
+
+# Reinstall with --skip-crds
+helm install eg oci://docker.io/envoyproxy/gateway-helm \
+  --version v1.4.0 \
+  -n envoy-gateway-system \
+  --create-namespace \
+  --skip-crds
+```
+
+**GatewayClass `cloud-provider-kind` not registered after cluster restart**
+
+cloud-provider-kind must be running continuously for the GatewayClass to stay `Accepted`. After a cluster or machine restart, start it again:
+
+```bash
+sudo cloud-provider-kind --gateway-channel standard --enable-lb-port-mapping
 ```
 
 **TLS certificate not trusted by browser or curl**
