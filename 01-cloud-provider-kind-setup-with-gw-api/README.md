@@ -77,7 +77,7 @@ The bundle includes a `safe-upgrades` ValidatingAdmissionPolicy that **blocks an
 
 ```bash
 # ❌ DO NOT run this — installs safe-upgrades policy that breaks cloud-provider-kind
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.1/standard-install.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml
 
 # ✅ Correct — let cloud-provider-kind manage CRDs via --gateway-channel standard
 sudo cloud-provider-kind --gateway-channel standard --enable-lb-port-mapping
