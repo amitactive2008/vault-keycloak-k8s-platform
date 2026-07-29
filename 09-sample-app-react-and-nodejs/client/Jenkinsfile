@@ -59,7 +59,12 @@ pipeline {
       }
     }
 
+    // Temporarily skipped because the initial NVD synchronization is slow.
+    // Remove the when block to re-enable this stage.
     stage('Dependency Check') {
+      when {
+        expression { false }
+      }
       steps {
         container('dependency-check') {
           dir("${APP_DIR}") {
@@ -166,4 +171,3 @@ pipeline {
     }
   }
 }
-
