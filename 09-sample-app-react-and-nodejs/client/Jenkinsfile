@@ -126,21 +126,25 @@ pipeline {
               usernameVariable: 'DOCKER_USER',
               passwordVariable: 'DOCKER_PASS'
             )]) {
-              sh """
-                echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
+              sh '''
+                # React output is architecture-neutral. Build it on BuildKit's
+                # native platform instead of compiling under QEMU once per
+                # target architecture.
+                sed -i '0,/^FROM node:/s//FROM --platform=$BUILDPLATFORM node:/' Dockerfile
+                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
                 docker buildx create \
-                  --name team-a-client-${BUILD_NUMBER} \
+                  --name "team-a-client-$BUILD_NUMBER" \
                   --driver remote \
                   tcp://buildkitd.jenkins.svc.cluster.local:1234 \
                   --use --bootstrap
                 docker buildx build \
                   --platform linux/amd64,linux/arm64 \
                   --push \
-                  -t ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} \
-                  -t ${REGISTRY}/${IMAGE_NAME}:team-a-latest \
+                  -t "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG" \
+                  -t "$REGISTRY/$IMAGE_NAME:team-a-latest" \
                   .
-                docker buildx rm team-a-client-${BUILD_NUMBER} || true
-              """
+                docker buildx rm "team-a-client-$BUILD_NUMBER" || true
+              '''
             }
           }
         }

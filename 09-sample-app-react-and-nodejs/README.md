@@ -113,6 +113,10 @@ to `team-a`, wait for rollouts, and run an in-pod smoke test. Client CD creates
 the stable `api-service` first because Nginx resolves that upstream name during
 startup, even when API CD has not run yet.
 
+The client pipeline builds the architecture-neutral React assets on BuildKit's
+native platform, then copies them into both target Nginx images. This avoids
+running `react-scripts build` through slow AMD64 emulation on an ARM kind node.
+
 ## Prerequisites
 
 Complete modules 01 through 08 first. Before starting these pipelines, verify:
