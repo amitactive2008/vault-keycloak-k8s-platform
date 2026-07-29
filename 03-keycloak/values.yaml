@@ -50,13 +50,7 @@ postgresql:
     size: 4Gi
 
 ingress:
-<<<<<<< HEAD
   enabled: false   # nginx ingress disabled — traffic routed via Envoy Gateway HTTPRoute (keycloak-httproute.yaml)
-=======
-  enabled: true
-  hostname: keycloak.kind.local
-  tlsSecretName: keycloak-local-tls        # Created by 03-keycloak TLS setup
->>>>>>> main
 
 realm:
   importEnabled: true   # Mounts kind-realm.json and imports on first boot

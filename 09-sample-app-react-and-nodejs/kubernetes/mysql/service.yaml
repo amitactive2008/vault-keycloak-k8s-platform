@@ -1,0 +1,36 @@
+# MySQL services for the Team A sample application.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sample-react-app-mysql
+  namespace: team-a
+  labels:
+    app: sample-react-app-mysql
+    team: team-a
+spec:
+  clusterIP: None
+  selector:
+    app: sample-react-app-mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: team-a
+  labels:
+    app: sample-react-app-mysql
+    team: team-a
+spec:
+  type: ClusterIP
+  selector:
+    app: sample-react-app-mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+

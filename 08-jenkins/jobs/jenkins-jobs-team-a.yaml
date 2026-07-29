@@ -7,7 +7,8 @@
 #             team-a/sample-react-app/client/ci
 #             team-a/sample-react-app/client/cd
 #
-# Source repo: https://github.com/amitactive2008/DevSecOps-Mega-Project
+# Pipeline repo: this platform repository (v5-codeX-gwApi-jenkins-reactApp)
+# App source:    https://github.com/amitactive2008/DevSecOps-Mega-Project
 # Namespace:   team-a
 # Vault path:  secret/data/team-a/sample-react-app/{api,client}
 #
@@ -50,17 +51,17 @@ data:
           // ── team-a/sample-react-app/api/ci ─────────────────────────
           pipelineJob('team-a/sample-react-app/api/ci') {
             displayName('CI')
-            description('API CI: Checkout→Install→Gitleaks→SCA→SAST→QGate→Docker→Trivy→TriggerCD. Image: amitactive2008/sample-react-app-api:<build>')
+            description('API CI: external source checkout → tests/scans → multi-arch image → Team A CD. Image tag: team-a-<build>.')
             logRotator { numToKeep(10) }
             definition {
               cpsScm {
                 scm {
                   git {
-                    remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
-                    branches('*/main', '*/dev')
+                    remote { url('https://github.com/amitactive2008/vault-keycloak-k8s-platform.git') }
+                    branches('*/v5-codeX-gwApi-jenkins-reactApp')
                   }
                 }
-                scriptPath('api/Jenkinsfile')
+                scriptPath('09-sample-app-react-and-nodejs/api/Jenkinsfile')
                 lightweight(true)
               }
             }
@@ -78,11 +79,11 @@ data:
               cpsScm {
                 scm {
                   git {
-                    remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
-                    branches('*/main')
+                    remote { url('https://github.com/amitactive2008/vault-keycloak-k8s-platform.git') }
+                    branches('*/v5-codeX-gwApi-jenkins-reactApp')
                   }
                 }
-                scriptPath('jenkins/Jenkinsfile-cd-local')
+                scriptPath('09-sample-app-react-and-nodejs/api/cd/Jenkinsfile')
                 lightweight(true)
               }
             }
@@ -91,17 +92,17 @@ data:
           // ── team-a/sample-react-app/client/ci ──────────────────────
           pipelineJob('team-a/sample-react-app/client/ci') {
             displayName('CI')
-            description('Client CI: Checkout→Install→Gitleaks→Tests→SCA→SAST→QGate→Docker→Trivy→TriggerCD. Image: amitactive2008/sample-react-app-client:<build>')
+            description('Client CI: external source checkout → tests/scans → multi-arch image → Team A CD. Image tag: team-a-<build>.')
             logRotator { numToKeep(10) }
             definition {
               cpsScm {
                 scm {
                   git {
-                    remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
-                    branches('*/main', '*/dev')
+                    remote { url('https://github.com/amitactive2008/vault-keycloak-k8s-platform.git') }
+                    branches('*/v5-codeX-gwApi-jenkins-reactApp')
                   }
                 }
-                scriptPath('client/Jenkinsfile')
+                scriptPath('09-sample-app-react-and-nodejs/client/Jenkinsfile')
                 lightweight(true)
               }
             }
@@ -120,7 +121,7 @@ data:
                 scm {
                   git {
                     remote { url('https://github.com/amitactive2008/vault-keycloak-k8s-platform.git') }
-                    branches('*/v4-gwApi-certmanager-jenkins-sampleapp-argocd')
+                    branches('*/v5-codeX-gwApi-jenkins-reactApp')
                   }
                 }
                 scriptPath('09-sample-app-react-and-nodejs/client/cd/Jenkinsfile')

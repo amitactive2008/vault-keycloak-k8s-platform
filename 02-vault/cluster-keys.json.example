@@ -19,5 +19,5 @@
   "recovery_keys_hex": [],
   "recovery_keys_shares": 0,
   "recovery_keys_threshold": 0,
-  "root_token": "hvs.4W4Kab7JvQ0qNhSu5BgG1Zsi"
+  "root_token": "<vault-root-token>"
 }

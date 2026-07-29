@@ -61,11 +61,13 @@ fi
 
 [ ${#FILES[@]} -gt 0 ] || { error "No YAML files found in $JOBS_DIR"; exit 1; }
 
-# Validate YAML before applying
+# Validate YAML before applying. kubectl is already a required dependency and
+# avoids requiring the optional Python PyYAML module on the operator's machine.
 for f in "${FILES[@]}"; do
-  python3 -c "import yaml; yaml.safe_load(open('${f}')); print('YAML valid: ${f##*/}')" 2>/dev/null || {
+  kubectl apply --dry-run=client -f "$f" >/dev/null 2>&1 || {
     error "${f} is not valid YAML"; exit 1
   }
+  info "YAML valid: ${f##*/}"
 done
 
 # ── Apply ConfigMaps ──────────────────────────────────────────────────────────

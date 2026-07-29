@@ -56,15 +56,15 @@ Prometheus (kube-prom-kube-prometheus-prometheus)
 
 ## Components
 
-| Component | Chart | App version | Release name | Namespace |
+| Component | Chart | Pinned version | Release name | Namespace |
 |---|---|---|---|---|
-| kube-prometheus-stack | `prometheus-community/kube-prometheus-stack` | `87.19.0` | `kube-prom` | `monitoring` |
-| Prometheus | (included) | v2.x | — | `monitoring` |
-| Alertmanager | (included) | v0.x | — | `monitoring` |
-| Grafana | (included) | 13.1.1 | — | `monitoring` |
+| kube-prometheus-stack | `prometheus-community/kube-prometheus-stack` | chart `87.19.0` | `kube-prom` | `monitoring` |
+| Prometheus | (included) | bundled by chart | — | `monitoring` |
+| Alertmanager | (included) | bundled by chart | — | `monitoring` |
+| Grafana | (included) | app `13.1.1` | — | `monitoring` |
 | Node Exporter | (included) | — | — | `monitoring` |
 | kube-state-metrics | (included) | — | — | `monitoring` |
-| Prometheus Blackbox Exporter | `prometheus-community/prometheus-blackbox-exporter` | `11.15.1` | `blackbox` | `monitoring` |
+| Prometheus Blackbox Exporter | `prometheus-community/prometheus-blackbox-exporter` | chart `11.15.1` | `blackbox` | `monitoring` |
 
 ### Kubernetes resources created
 

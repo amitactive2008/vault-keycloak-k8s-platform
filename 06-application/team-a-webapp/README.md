@@ -157,8 +157,18 @@ helm upgrade team-a-webapp ./webapp-chart \
 
 ```bash
 helm uninstall team-a-webapp --namespace team-a
+```
+
+Do not delete the `team-a` namespace when module 09 or another Team A workload
+is installed there. To remove the namespace only after confirming it is empty:
+
+```bash
+kubectl get all,secret,configmap,pvc,httproute -n team-a
 kubectl delete namespace team-a
 ```
+
+Namespace deletion is destructive and also removes retained PVCs, Secrets,
+RBAC, and every other Team A workload in that namespace.
 
 ---
 
@@ -177,9 +187,9 @@ kubectl logs -n team-a -l app=webapp-backend -c vault-agent
 # PostgreSQL logs
 kubectl logs -n team-a postgres-0
 
-# Check injected secret file
+# Check which variables were injected without printing their secret values
 kubectl exec -n team-a deploy/webapp-backend -c backend \
-  -- cat /vault/secrets/db.env
+  -- sh -c "sed 's/=.*$/=<redacted>/' /vault/secrets/db.env"
 
 # HTTPRoutes
 kubectl get httproute -n team-a

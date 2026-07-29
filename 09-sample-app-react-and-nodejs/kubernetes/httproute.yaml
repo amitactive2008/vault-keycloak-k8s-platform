@@ -2,11 +2,9 @@
 # Pattern: same as other services in this platform (02-vault, 03-keycloak, etc.)
 #
 # Traffic split:
-#   / and all non-/api/* paths → client service (React SPA via Nginx)
-#   /api/*                     → api-service (Node.js Express, via Nginx proxy in client pod)
-#
-# The Nginx in the client container handles /api/* proxying internally.
-# External routing sends everything to the client service and Nginx does the rest.
+#   /api/live   → api-service /live
+#   /api/health → api-service /health
+#   everything else → client service (React SPA and Nginx /api proxy)
 ---
 # HTTPS route for sample-react-app.kind.local
 apiVersion: gateway.networking.k8s.io/v1
@@ -22,6 +20,32 @@ spec:
   hostnames:
     - "sample-react-app.kind.local"
   rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /api/live
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /live
+      backendRefs:
+        - name: api-service
+          port: 5000
+    - matches:
+        - path:
+            type: Exact
+            value: /api/health
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /health
+      backendRefs:
+        - name: api-service
+          port: 5000
     - matches:
         - path:
             type: PathPrefix

@@ -68,8 +68,4 @@ vault:
 
 # ── Ingress ───────────────────────────────────────────────────
 ingress:
-<<<<<<< HEAD
   hostname: team-a-webapp.kind.local
-=======
-  hostname: team-a-webapp.local
->>>>>>> main

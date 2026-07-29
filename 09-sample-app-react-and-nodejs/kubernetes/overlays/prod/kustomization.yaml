@@ -55,11 +55,6 @@ patches:
       kind: ServiceAccount
       name: app-access-sa
 
-  - path: app-secret-provider-patch.yaml
-    target:
-      kind: SecretProviderClass
-      name: app-secrets
-
   - path: ingress-patch.yaml
     target:
       kind: Ingress

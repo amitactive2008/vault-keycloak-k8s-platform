@@ -86,12 +86,9 @@ kubectl exec -n vault vault-0 -- vault operator init \
   -format=json > cluster-keys.json
 ```
 
-> **Keep `cluster-keys.json` safe.** Add it to `.gitignore` immediately.
+> **Keep `cluster-keys.json` safe.** The repository `.gitignore` already
+> excludes this file. Never commit, paste, or share its contents.
 > Anyone with the unseal keys and root token has full access to Vault.
-
-```bash
-echo "cluster-keys.json" >> ../.gitignore
-```
 
 ## Step 5 — Unseal all pods
 
@@ -104,9 +101,9 @@ K2=$(jq -r '.unseal_keys_b64[2]' cluster-keys.json)
 
 for pod in vault-0 vault-1 vault-2; do
   echo "=== Unsealing $pod ==="
-  kubectl exec -n vault $pod -- vault operator unseal "$K0"
-  kubectl exec -n vault $pod -- vault operator unseal "$K1"
-  kubectl exec -n vault $pod -- vault operator unseal "$K2"
+  kubectl exec -n vault "$pod" -- vault operator unseal "$K0"
+  kubectl exec -n vault "$pod" -- vault operator unseal "$K1"
+  kubectl exec -n vault "$pod" -- vault operator unseal "$K2"
 done
 ```
 
@@ -168,9 +165,9 @@ K1=$(jq -r '.unseal_keys_b64[1]' cluster-keys.json)
 K2=$(jq -r '.unseal_keys_b64[2]' cluster-keys.json)
 
 for pod in vault-0 vault-1 vault-2; do
-  kubectl exec -n vault $pod -- vault operator unseal "$K0"
-  kubectl exec -n vault $pod -- vault operator unseal "$K1"
-  kubectl exec -n vault $pod -- vault operator unseal "$K2"
+  kubectl exec -n vault "$pod" -- vault operator unseal "$K0"
+  kubectl exec -n vault "$pod" -- vault operator unseal "$K1"
+  kubectl exec -n vault "$pod" -- vault operator unseal "$K2"
 done
 ```
 
@@ -219,12 +216,15 @@ and the rollout pauses until it becomes Ready. Unseal each pod to unblock the ne
 ```bash
 for i in 2 1 0; do
   echo "--- Waiting for vault-$i to restart ---"
-  until kubectl exec -n vault vault-$i -- vault status 2>/dev/null | grep -q "Sealed.*true"; do
+  until kubectl exec -n vault "vault-$i" -- vault status 2>/dev/null | grep -q "Sealed.*true"; do
     sleep 3
   done
-  kubectl exec -n vault vault-$i -- vault operator unseal $(jq -r '.unseal_keys_b64[0]' cluster-keys.json)
-  kubectl exec -n vault vault-$i -- vault operator unseal $(jq -r '.unseal_keys_b64[1]' cluster-keys.json)
-  kubectl exec -n vault vault-$i -- vault operator unseal $(jq -r '.unseal_keys_b64[2]' cluster-keys.json)
+  kubectl exec -n vault "vault-$i" -- vault operator unseal \
+    "$(jq -r '.unseal_keys_b64[0]' cluster-keys.json)"
+  kubectl exec -n vault "vault-$i" -- vault operator unseal \
+    "$(jq -r '.unseal_keys_b64[1]' cluster-keys.json)"
+  kubectl exec -n vault "vault-$i" -- vault operator unseal \
+    "$(jq -r '.unseal_keys_b64[2]' cluster-keys.json)"
   echo "vault-$i unsealed"
 done
 ```

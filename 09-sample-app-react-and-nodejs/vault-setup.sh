@@ -48,8 +48,9 @@ MYSQL_DATABASE="sample_app_db"
 MYSQL_USER="appuser"
 MYSQL_PASSWORD="AppUser@SecurePass2024!"
 
-# App secrets written to Vault KV
-JWT_SECRET="sample-react-app-jwt-secret-$(date +%s)"
+# App secrets written to Vault KV. Preserve the JWT signing secret on reruns so
+# existing user sessions do not become invalid every time setup is reconciled.
+JWT_SECRET=""
 
 ROOT_TOKEN=$(python3 -c "
 import json
@@ -86,6 +87,13 @@ section "Step 1 — Writing secrets to Vault KV"
 vault_exec "secrets enable -path=secret kv-v2 2>/dev/null \
   && echo 'KV v2 enabled at secret/' \
   || echo 'KV v2 already enabled'"
+
+# Preserve an existing JWT secret when this idempotent script is rerun.
+JWT_SECRET=$(vault_exec "kv get -field=JWT_SECRET secret/team-a/sample-react-app/api" \
+  2>/dev/null || true)
+if [ -z "$JWT_SECRET" ]; then
+  JWT_SECRET="sample-react-app-jwt-secret-$(date +%s)"
+fi
 
 # API secrets: DB credentials + JWT secret
 info "Writing API secrets → secret/data/team-a/sample-react-app/api"
@@ -291,8 +299,11 @@ cat << EOF
 ║   2. Run the Jenkins CI pipeline:                                     ║
 ║       team-a/sample-react-app/api/ci                                  ║
 ║       team-a/sample-react-app/client/ci                               ║
-║   3. Or deploy directly:                                              ║
-║       kubectl apply -f kubernetes/ -n team-a                          ║
+║   3. Or deploy directly (after images exist):                         ║
+║       kubectl apply -f kubernetes/mysql/                              ║
+║       kubectl apply -f kubernetes/api/                                ║
+║       kubectl apply -f kubernetes/client/                             ║
+║       kubectl apply -f kubernetes/httproute.yaml                      ║
 ║   4. Access the app:                                                   ║
 ║       https://sample-react-app.kind.local                             ║
 ╚════════════════════════════════════════════════════════════════════════╝
