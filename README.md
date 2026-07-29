@@ -117,7 +117,6 @@ editing. See [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow and
 | 07 | [Monitoring](07-monitoring/README.md) | Prometheus, Grafana, Alertmanager, blackbox exporter | Optional |
 | 08 | [Jenkins and SonarQube](08-jenkins/README.md) | CI/CD, code quality, JCasC, and team jobs | Optional |
 | 09 | [Team A React + Node.js app](09-sample-app-react-and-nodejs/README.md) | Kustomize deployments and CI/CD manifests | Optional |
-| 10 | [Team B React app](10-sample-react-app-team-b/README.md) | Team-isolated variant and pipelines | Optional |
 | 11 | [Argo CD](11-argocd/README.md) | GitOps layer | Planned |
 | 12 | [Velero backup](12-valero-backup/README.md) | Backup and restore | Planned |
 | 13 | [Istio](13-istio/README.md) | Service mesh experiments | Planned |
@@ -309,7 +308,6 @@ After the core setup, continue with the module-specific guides:
 - [07 — Monitoring](07-monitoring/README.md)
 - [08 — Jenkins and SonarQube](08-jenkins/README.md)
 - [09 — Team A React + Node.js application](09-sample-app-react-and-nodejs/README.md)
-- [10 — Team B application](10-sample-react-app-team-b/README.md)
 
 Modules 11–13 are documented placeholders and are not yet deployable.
 

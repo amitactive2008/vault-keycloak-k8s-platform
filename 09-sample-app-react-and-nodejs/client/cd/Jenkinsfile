@@ -9,14 +9,17 @@ pipeline {
   parameters {
     string(name: 'IMAGE_TAG', defaultValue: 'team-a-latest',
            description: 'Client image tag produced by Team A CI')
+    string(name: 'EXPECTED_CONTEXT', defaultValue: 'external',
+           description: 'Required context name in the Vault-injected kubeconfig')
   }
 
   environment {
-    REGISTRY   = 'amitactive2008'
-    IMAGE_NAME = 'sample-react-app-client'
-    NAMESPACE  = 'team-a'
-    DEPLOYMENT = 'sample-react-app-client'
-    MANIFESTS  = '09-sample-app-react-and-nodejs/kubernetes'
+    REGISTRY    = 'amitactive2008'
+    IMAGE_NAME  = 'sample-react-app-client'
+    NAMESPACE   = 'team-a'
+    DEPLOYMENT  = 'sample-react-app-client'
+    MANIFESTS   = '09-sample-app-react-and-nodejs/kubernetes'
+    KUBECONFIG  = '/vault/secrets/kubeconfig'
   }
 
   options {
@@ -26,51 +29,61 @@ pipeline {
   }
 
   stages {
+    stage('Validate Target Cluster') {
+      steps {
+        sh '''
+          test -s "$KUBECONFIG"
+          ACTUAL_CONTEXT="$(kubectl config current-context)"
+          test "$ACTUAL_CONTEXT" = "$EXPECTED_CONTEXT" || {
+            echo "Refusing deployment: expected context '$EXPECTED_CONTEXT', got '$ACTUAL_CONTEXT'" >&2
+            exit 1
+          }
+          kubectl cluster-info
+          kubectl auth can-i create deployments -n "$NAMESPACE" | grep -qx yes
+          kubectl auth can-i patch deployments -n "$NAMESPACE" | grep -qx yes
+        '''
+      }
+    }
+
     stage('Apply Client Infrastructure') {
       steps {
-        withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
-          sh '''
-            # Nginx resolves api-service when it starts. Create the stable
-            # service name even when client CD runs before API CD.
-            kubectl apply -f "$MANIFESTS/api/service.yaml"
-            kubectl apply -f "$MANIFESTS/client/"
-            kubectl apply -f "$MANIFESTS/httproute.yaml"
-          '''
-        }
+        sh '''
+          # Nginx resolves api-service when it starts. Create the stable
+          # service name even when client CD runs before API CD.
+          kubectl apply -f "$MANIFESTS/api/service.yaml"
+          kubectl apply -f "$MANIFESTS/client/"
+          kubectl apply -f "$MANIFESTS/httproute.yaml"
+        '''
       }
     }
 
     stage('Deploy Client Image') {
       steps {
-        withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
-          sh """
-            kubectl set image deployment/${DEPLOYMENT} \
-              client=${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG} \
-              -n ${NAMESPACE}
-          """
-        }
+        sh """
+          kubectl set image deployment/${DEPLOYMENT} \
+            client=${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG} \
+            -n ${NAMESPACE}
+        """
       }
     }
 
     stage('Verify Client') {
       steps {
-        withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
-          sh '''
-            kubectl rollout status deployment/"$DEPLOYMENT" \
-              -n "$NAMESPACE" --timeout=5m
-            CLIENT_POD=$(kubectl get endpoints sample-react-app-client \
-              -n "$NAMESPACE" \
-              -o jsonpath='{.subsets[0].addresses[0].targetRef.name}')
-            kubectl exec -n "$NAMESPACE" "$CLIENT_POD" -c client -- sh -c '
-              attempts=0
-              until wget -qO- http://127.0.0.1/; do
-                attempts=$((attempts + 1))
-                [ "$attempts" -ge 10 ] && exit 1
-                sleep 2
-              done
-            '
-          '''
-        }
+        sh '''
+          kubectl rollout status deployment/"$DEPLOYMENT" \
+            -n "$NAMESPACE" --timeout=5m
+          CLIENT_POD=$(kubectl get endpoints sample-react-app-client \
+            -n "$NAMESPACE" \
+            -o jsonpath='{.subsets[0].addresses[0].targetRef.name}')
+          kubectl exec -n "$NAMESPACE" "$CLIENT_POD" -c client -- sh -c '
+            attempts=0
+            until wget -qO- http://127.0.0.1/; do
+              attempts=$((attempts + 1))
+              [ "$attempts" -ge 10 ] && exit 1
+              sleep 2
+            done
+          '
+        '''
       }
     }
   }
@@ -80,9 +93,7 @@ pipeline {
       echo "Client deployed: ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}"
     }
     failure {
-      withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
-        sh 'kubectl get pods -n "$NAMESPACE" || true'
-      }
+      sh 'kubectl get pods -n "$NAMESPACE" || true'
     }
   }
 }

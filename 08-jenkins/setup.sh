@@ -13,7 +13,7 @@
 #   3. Creates the cert-manager CA Secret in sonarqube namespace
 #      (so SonarQube's JVM can verify Keycloak HTTPS)
 #   4. Applies Kubernetes manifests: namespace, RBAC, buildkitd, PVC, certs-stub
-#   5. Applies the jenkins-credentials Secret
+#   5. Reports the Vault-backed Jenkins agent identities
 #   6. Adds Helm repos; installs / upgrades SonarQube
 #   7. Installs / upgrades Jenkins
 #   8. Applies HTTPRoutes (jenkins.kind.local, sonarqube.kind.local)
@@ -309,23 +309,13 @@ kubectl apply -k "${SCRIPT_DIR}/setup" 2>&1 || {
 }
 info "Base manifests applied ✓"
 
-# ── Step 5: Jenkins credentials Secret ────────────────────────────────────────
-section "Step 5 — Applying jenkins-credentials Secret"
+# ── Step 5: Vault-backed Jenkins identities ───────────────────────────────────
+section "Step 5 — Checking Vault-backed Jenkins agent identities"
 
-CREDS_FILE="${SCRIPT_DIR}/setup/credentials.yaml"
-if [ -f "$CREDS_FILE" ]; then
-  kubectl apply -f "$CREDS_FILE" -n "$JENKINS_NS" 2>/dev/null \
-    || kubectl apply -f "$CREDS_FILE" 2>/dev/null
-  info "jenkins-credentials applied from ${CREDS_FILE} ✓"
-else
-  warn "credentials.yaml not found — creating a placeholder Secret"
-  kubectl create secret generic jenkins-credentials \
-    --namespace "$JENKINS_NS" \
-    --from-literal=DOCKERHUB_USERNAME="placeholder" \
-    --from-literal=DOCKERHUB_PASSWORD="placeholder" \
-    --from-literal=NVD_API_KEY="placeholder" \
-    --dry-run=client -o yaml | kubectl apply -f -
-fi
+kubectl get serviceaccount jenkins-ci -n "$JENKINS_NS" >/dev/null
+kubectl get serviceaccount jenkins-cd-external -n "$JENKINS_NS" >/dev/null
+info "Jenkins CI/CD ServiceAccounts are ready ✓"
+info "Run ./vault-setup.sh and seed the documented Vault KV paths before builds."
 
 # ── Step 6: SonarQube Helm install / upgrade ───────────────────────────────────
 section "Step 6 — Installing SonarQube (${SONAR_CHART_VERSION})"

@@ -92,14 +92,14 @@ The CI jobs perform:
 1. Application source checkout.
 2. `npm ci` plus API syntax checks or client tests.
 3. Gitleaks scanning.
-4. OWASP Dependency-Check using the Jenkins `NVD_API_KEY` credential. This
+4. OWASP Dependency-Check using `/vault/secrets/nvd-api-key`. This
    stage is temporarily skipped with `when { expression { false } }`; remove
    that `when` block from both CI Jenkinsfiles to re-enable it.
 5. Non-blocking SonarQube analysis. A scanner outage marks the stage unstable
    without suppressing image delivery. The quality-gate wait is temporarily
    disabled until the SonarQube-to-Jenkins webhook is verified.
 6. BuildKit multi-platform build for `linux/amd64,linux/arm64`.
-7. Docker Hub push using the Jenkins `dockerhub` credential.
+7. Docker Hub push using the Vault-injected username and token.
 8. Trivy image scanning.
 9. Automatic start of the matching CD job.
 
@@ -110,12 +110,13 @@ Images are published as:
 - `amitactive2008/sample-react-app-client:team-a-<BUILD_NUMBER>`
 - `amitactive2008/sample-react-app-client:team-a-latest`
 
-The CD jobs use the Jenkins file credential `external-kubeconfig`, deploy only
-to `team-a`, wait for rollouts, and run an in-pod smoke test. Client CD creates
-the stable `api-service` first because Nginx resolves that upstream name during
-startup, even when API CD has not run yet. Smoke tests use each Service's ready
-endpoint, so a terminating pod from another ReplicaSet cannot cause a false
-failure.
+The CD agent receives a restricted remote-cluster kubeconfig from
+`secret/data/devops/jenkins/clusters/external`. The jobs require its context to
+be named `external`, deploy only to `team-a`, wait for rollouts, and run an
+in-pod smoke test. Client CD creates the stable `api-service` first because
+Nginx resolves that upstream name during startup, even when API CD has not run
+yet. Smoke tests use each Service's ready endpoint, so a terminating pod from
+another ReplicaSet cannot cause a false failure.
 
 The client pipeline builds the architecture-neutral React assets on BuildKit's
 native platform, then copies them into both target Nginx images. This avoids
@@ -123,7 +124,8 @@ running `react-scripts build` through slow AMD64 emulation on an ARM kind node.
 
 ## Prerequisites
 
-Complete modules 01 through 08 first. Before starting these pipelines, verify:
+Complete modules 01 through 08, including module 08's `vault-setup.sh` and KV
+seeding steps. Before starting these pipelines, verify:
 
 ```bash
 kubectl get gateway native-gateway
@@ -133,14 +135,21 @@ kubectl get pods -n sonarqube
 kubectl get namespace team-a
 ```
 
-Jenkins must contain these credentials:
+Vault must contain:
 
-- `dockerhub`
-- `NVD_API_KEY` (required when Dependency-Check is re-enabled)
-- `external-kubeconfig`
+- `secret/data/devops/jenkins/ci` with `dockerhub_username`,
+  `dockerhub_token`, and `nvd_api_key`;
+- `secret/data/devops/jenkins/clusters/external` with a raw `kubeconfig` key.
 
-See `08-jenkins/setup/credentials-template.yaml` and the module 08 README. Never
-commit the populated credentials file or a kubeconfig.
+The Jenkins controller does not receive these values. Vault Agent renders them
+only inside the corresponding ephemeral build pod. See the module 08 README and
+never commit a populated kubeconfig.
+
+The target cluster must also provide the platform dependencies referenced by
+these manifests: namespace `team-a`, Gateway `default/native-gateway`, its TLS
+configuration, and a Vault Agent Injector able to resolve the application Vault
+role and paths. A kubeconfig grants access but does not install those
+dependencies on a new cluster.
 
 ## Setup
 
@@ -291,10 +300,17 @@ kubectl exec -n jenkins jenkins-0 -c jenkins -- \
   -name config.xml
 ```
 
-Also verify that Docker Hub credentials are valid and BuildKit is ready:
+Also verify that the CI Vault path exists and BuildKit is ready:
 
 ```bash
 kubectl get deployment,service,pods -n jenkins -l app=buildkitd
+kubectl get serviceaccount jenkins-ci -n jenkins
+```
+
+If the agent remains in its init phase, inspect the injected Vault Agent logs:
+
+```bash
+kubectl logs -n jenkins <agent-pod> -c vault-agent-init
 ```
 
 ### API is waiting or restarting

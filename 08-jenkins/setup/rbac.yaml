@@ -1,6 +1,20 @@
-# ClusterRole giving the Jenkins ServiceAccount permission to manage agent pods
-# across the jenkins namespace, and to list cluster nodes (needed by Kubernetes plugin).
+# Dedicated identities used by Vault Kubernetes authentication. These accounts
+# receive no local cluster permissions from this file; Vault policies determine
+# which secret path each agent can read.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins-ci
+  namespace: jenkins
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins-cd-external
+  namespace: jenkins
+---
+# ClusterRole giving the Jenkins controller ServiceAccount permission to manage
+# agent pods and list cluster nodes (needed by the Kubernetes plugin).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

@@ -68,17 +68,16 @@ pipeline {
       steps {
         container('dependency-check') {
           dir("${APP_DIR}") {
-            withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
-              sh '''
-                NVD_OPTS=""
-                [ -n "$NVD_KEY" ] && NVD_OPTS="--nvdApiKey $NVD_KEY"
-                /usr/share/dependency-check/bin/dependency-check.sh \
-                  --scan . --project sample-react-app-team-a-api \
-                  --data /dependency-check-data $NVD_OPTS \
-                  --out reports --format HTML --format JSON \
-                  --failOnCVSS 11 || true
-              '''
-            }
+            sh '''
+              set +x
+              NVD_KEY="$(cat /vault/secrets/nvd-api-key)"
+              /usr/share/dependency-check/bin/dependency-check.sh \
+                --scan . --project sample-react-app-team-a-api \
+                --data /dependency-check-data \
+                --nvdApiKey "$NVD_KEY" \
+                --out reports --format HTML --format JSON \
+                --failOnCVSS 11 || true
+            '''
           }
         }
       }
@@ -120,27 +119,26 @@ pipeline {
       steps {
         container('docker-cli') {
           dir("${APP_DIR}") {
-            withCredentials([usernamePassword(
-              credentialsId: 'dockerhub',
-              usernameVariable: 'DOCKER_USER',
-              passwordVariable: 'DOCKER_PASS'
-            )]) {
-              sh """
-                echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                docker buildx create \
-                  --name team-a-api-${BUILD_NUMBER} \
-                  --driver remote \
-                  tcp://buildkitd.jenkins.svc.cluster.local:1234 \
-                  --use --bootstrap
-                docker buildx build \
-                  --platform linux/amd64,linux/arm64 \
-                  --push \
-                  -t ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} \
-                  -t ${REGISTRY}/${IMAGE_NAME}:team-a-latest \
-                  .
-                docker buildx rm team-a-api-${BUILD_NUMBER} || true
-              """
-            }
+            sh """
+              set +x
+              DOCKER_USER="\$(cat /vault/secrets/dockerhub-username)"
+              DOCKER_TOKEN="\$(cat /vault/secrets/dockerhub-token)"
+              printf '%s' "\$DOCKER_TOKEN" |
+                docker login --username "\$DOCKER_USER" --password-stdin
+              docker buildx create \
+                --name team-a-api-${BUILD_NUMBER} \
+                --driver remote \
+                tcp://buildkitd.jenkins.svc.cluster.local:1234 \
+                --use --bootstrap
+              docker buildx build \
+                --platform linux/amd64,linux/arm64 \
+                --push \
+                -t ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} \
+                -t ${REGISTRY}/${IMAGE_NAME}:team-a-latest \
+                .
+              docker buildx rm team-a-api-${BUILD_NUMBER} || true
+              unset DOCKER_TOKEN
+            """
           }
         }
       }
