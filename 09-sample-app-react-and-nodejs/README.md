@@ -111,7 +111,8 @@ Images are published as:
 The CD jobs use the Jenkins file credential `external-kubeconfig`, deploy only
 to `team-a`, wait for rollouts, and run an in-pod smoke test. Client CD creates
 the stable `api-service` first because Nginx resolves that upstream name during
-startup, even when API CD has not run yet.
+startup, even when API CD has not run yet. Smoke tests select the newest pod so
+a terminating pod from the old ReplicaSet cannot cause a false failure.
 
 The client pipeline builds the architecture-neutral React assets on BuildKit's
 native platform, then copies them into both target Nginx images. This avoids
