@@ -94,17 +94,19 @@ Keycloak (kind realm, sonarqube OIDC client)
         └── team-b  → react-app-team-b project
 
 Jenkins Agent pods (ephemeral, Kubernetes plugin)
-    ├── jnlp         (Jenkins agent)
-    ├── nodejs       (node:latest — compile + test)
-    ├── sonar        (sonarsource/sonar-scanner-cli — SAST)
-    ├── docker-cli   (docker build via buildkitd)
-    ├── trivy        (image scanning)
-    ├── gitleaks     (secret scanning)
-    ├── dependency-check (OWASP SCA)
-    └── kubectl      (CD deployments)
+    ├── CI ServiceAccount: jenkins-ci
+    │   ├── Vault role: jenkins-ci
+    │   └── Docker Hub + NVD files rendered under /vault/secrets
+    └── CD ServiceAccount: jenkins-cd-external
+        ├── Vault role: jenkins-cd-external
+        ├── restricted kubeconfig rendered under /vault/secrets
+        └── kubectl deploys only through context external
 
 BuildKit daemon (buildkitd, non-TLS, namespace: jenkins)
     └── Handles Docker image builds from agent pods
+
+Target Kubernetes cluster
+    └── Namespace team-a (namespace-scoped jenkins-deployer RBAC)
 ```
 
 ---
@@ -230,6 +232,13 @@ KUBECONFIG=/path/to/external-kubeconfig \
 
 The expected context is `external`, deployment access is `yes`, and namespace
 deletion is `no`.
+
+For a local integration test, the `external` context may point back to the kind
+cluster through an API address reachable from Jenkins pods. This proves the
+authentication and RBAC flow, but it is not a substitute for testing network
+reachability, CA trust, and platform prerequisites on the intended remote
+cluster. Replace the Vault value before using that cluster as a deployment
+target.
 
 ### Step 3 — Run setup.sh
 
@@ -422,6 +431,11 @@ The CI and CD roles cannot read each other's paths. `agent-pre-populate-only`
 causes the build container to start only after Vault has rendered the files; a
 missing secret or denied policy therefore fails closed.
 
+The static kubeconfig is an explicit study-environment trade-off. Its bearer
+token remains valid until the `jenkins-deployer-token` Secret is replaced or
+deleted. Rotate it by recreating the Secret on the target cluster, regenerating
+the kubeconfig, updating the Vault value, and starting a new CD build.
+
 The SonarQube analysis token remains a Jenkins credential because `setup.sh`
 generates it after SonarQube starts and JCasC supplies it to the SonarQube
 plugin. It is not part of `secret/data/devops/jenkins`.
@@ -594,6 +608,22 @@ helm rollback sonarqube -n sonarqube
 ```
 
 ## Known limitations
+
+### Pipeline security stages are not all blocking
+
+The Team A Dependency-Check stages and SonarQube quality-gate waits are
+temporarily disabled in their Jenkinsfiles. Trivy and SonarQube scanner
+failures are currently non-blocking. This keeps the study pipeline deployable,
+but it must not be interpreted as a production security gate. Module 09 lists
+the exact stage behavior.
+
+### Remote-cluster bootstrap is separate
+
+The stored kubeconfig provides authentication and namespace-scoped
+authorization only. It does not install Gateway API, Envoy Gateway,
+cert-manager, Vault Agent Injector, or the application Vault role on a new
+cluster. Bootstrap those dependencies first, and ensure the kubeconfig API
+server address is reachable from Jenkins agent pods.
 
 ### SonarQube OIDC is provided by a community plugin
 

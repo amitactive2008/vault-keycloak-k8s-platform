@@ -151,6 +151,12 @@ configuration, and a Vault Agent Injector able to resolve the application Vault
 role and paths. A kubeconfig grants access but does not install those
 dependencies on a new cluster.
 
+When the target is a genuinely separate cluster, run the Team A application
+Vault bootstrap against that cluster as well. The current
+`vault-setup.sh` uses the active kubectl context and the Vault deployment
+reachable through it; check the context before running the script. Do not assume
+that preparing Vault on the Jenkins cluster also prepares Vault on the target.
+
 ## Setup
 
 Run commands from the repository root.
@@ -262,6 +268,30 @@ curl --fail --cacert /tmp/kind-local-ca.crt \
 
 The seed data in the upstream study application creates
 `admin@example.com` / `admin123`. These are demo-only credentials.
+
+## Integration validation record
+
+The end-to-end flow was exercised on 29 July 2026 with the `external`
+kubeconfig pointing back to the local kind cluster as a remote-target
+stand-in:
+
+- Vault Agent rendered CI and CD credentials into separate agent identities,
+  and each Vault policy was denied access to the other path.
+- API and client CI builds completed, pushed immutable Docker Hub images, and
+  automatically triggered their CD jobs.
+- Both CD jobs accepted context `external`, passed the namespace-scoped RBAC
+  preflight, deployed into `team-a`, and completed their rollout smoke tests.
+- The frontend, `/api/live`, and `/api/health` responded successfully through
+  Envoy Gateway; both HTTPRoutes reported accepted and resolved conditions.
+
+This record validates the pipeline mechanics and least-privilege split. A real
+remote cluster still requires a separate reachability, CA-trust, platform
+bootstrap, and rollout test.
+
+At validation time, the client dependency audit reported known npm
+vulnerabilities, including critical findings. The current pipeline does not
+fail on that report, so review and upgrade the upstream client dependencies
+before treating the image as releasable.
 
 ## Troubleshooting
 

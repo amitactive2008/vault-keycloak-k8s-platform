@@ -18,7 +18,8 @@ A complete local platform running on a [kind](https://kind.sigs.k8s.io/) cluster
 | **Vault OIDC auth** | Vault OIDC → Keycloak `kind` realm |
 | **kubectl SSO** | kube-apiserver OIDC → Keycloak; per-team RBAC |
 | **Operations** | Prometheus/Grafana monitoring + Jenkins/SonarQube CI/CD |
-| **Sample apps** | Team A and Team B workloads with Vault Agent secret injection |
+| **CI/CD secrets** | Vault Agent injection for Docker Hub, NVD, and target-cluster kubeconfig |
+| **Sample apps** | Team A workloads with Vault Agent secret injection |
 
 ---
 
@@ -57,6 +58,25 @@ Envoy Gateway (native-gateway)
 kube-apiserver ──── OIDC ────► Keycloak
                                (HTTPS, in-cluster via CoreDNS → Envoy GW)
 ```
+
+The Team A React/Node.js pipelines use short-lived Jenkins agents. CI agents
+read only the Docker Hub and NVD values allowed by the `jenkins-ci` Vault role.
+CD agents read only the static, namespace-scoped kubeconfig allowed by the
+`jenkins-cd-external` role:
+
+```text
+Jenkins controller
+  ├── CI agent ── Kubernetes auth ──► Vault devops/jenkins/ci
+  │             └── build + push immutable API/client images
+  └── CD agent ── Kubernetes auth ──► Vault devops/jenkins/clusters/external
+                └── deploy through context external into namespace team-a
+```
+
+The kubeconfig permits Jenkins to target a different Kubernetes cluster; that
+cluster must already provide the namespace, Gateway API, TLS, and Vault
+dependencies required by the application. See modules
+[08](08-jenkins/README.md) and
+[09](09-sample-app-react-and-nodejs/README.md) for setup and rotation.
 
 ### Hostnames
 
@@ -115,8 +135,8 @@ editing. See [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow and
 | 05 | [Kubernetes OIDC](05-k8s-oidc-with-keycloak/README.md) | kubectl SSO and namespace RBAC | Optional |
 | 06 | [Team A webapp](06-application/team-a-webapp/README.md) | Helm sample with Vault Agent injection | Optional |
 | 07 | [Monitoring](07-monitoring/README.md) | Prometheus, Grafana, Alertmanager, blackbox exporter | Optional |
-| 08 | [Jenkins and SonarQube](08-jenkins/README.md) | CI/CD, code quality, JCasC, and team jobs | Optional |
-| 09 | [Team A React + Node.js app](09-sample-app-react-and-nodejs/README.md) | Kustomize deployments and CI/CD manifests | Optional |
+| 08 | [Jenkins and SonarQube](08-jenkins/README.md) | Vault-backed CI/CD, code quality, JCasC, and team jobs | Optional |
+| 09 | [Team A React + Node.js app](09-sample-app-react-and-nodejs/README.md) | Jenkins pipelines and canonical Gateway API deployment manifests | Optional |
 | 11 | [Argo CD](11-argocd/README.md) | GitOps layer | Planned |
 | 12 | [Velero backup](12-valero-backup/README.md) | Backup and restore | Planned |
 | 13 | [Istio](13-istio/README.md) | Service mesh experiments | Planned |
