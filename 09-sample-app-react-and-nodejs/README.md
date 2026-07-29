@@ -108,7 +108,9 @@ Images are published as:
 - `amitactive2008/sample-react-app-client:team-a-latest`
 
 The CD jobs use the Jenkins file credential `external-kubeconfig`, deploy only
-to `team-a`, wait for rollouts, and run an in-pod smoke test.
+to `team-a`, wait for rollouts, and run an in-pod smoke test. Client CD creates
+the stable `api-service` first because Nginx resolves that upstream name during
+startup, even when API CD has not run yet.
 
 ## Prerequisites
 

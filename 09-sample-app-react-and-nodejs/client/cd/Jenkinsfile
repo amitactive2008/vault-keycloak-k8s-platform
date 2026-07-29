@@ -30,6 +30,9 @@ pipeline {
       steps {
         withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
           sh '''
+            # Nginx resolves api-service when it starts. Create the stable
+            # service name even when client CD runs before API CD.
+            kubectl apply -f "$MANIFESTS/api/service.yaml"
             kubectl apply -f "$MANIFESTS/client/"
             kubectl apply -f "$MANIFESTS/httproute.yaml"
           '''
