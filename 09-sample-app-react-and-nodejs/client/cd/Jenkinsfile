@@ -63,7 +63,7 @@ pipeline {
               -o jsonpath='{.subsets[0].addresses[0].targetRef.name}')
             kubectl exec -n "$NAMESPACE" "$CLIENT_POD" -c client -- sh -c '
               attempts=0
-              until wget -qO- http://localhost/; do
+              until wget -qO- http://127.0.0.1/; do
                 attempts=$((attempts + 1))
                 [ "$attempts" -ge 10 ] && exit 1
                 sleep 2
