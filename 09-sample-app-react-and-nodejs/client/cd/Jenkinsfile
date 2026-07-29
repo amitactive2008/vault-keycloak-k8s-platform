@@ -37,7 +37,7 @@ pipeline {
             echo "Refusing deployment: expected context '$EXPECTED_CONTEXT', got '$ACTUAL_CONTEXT'" >&2
             exit 1
           }
-          kubectl cluster-info
+          kubectl get --raw=/version >/dev/null
           kubectl auth can-i create deployments -n "$NAMESPACE" | grep -qx yes
           kubectl auth can-i patch deployments -n "$NAMESPACE" | grep -qx yes
         '''
