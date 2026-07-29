@@ -93,8 +93,9 @@ The CI jobs perform:
 4. OWASP Dependency-Check using the Jenkins `NVD_API_KEY` credential. This
    stage is temporarily skipped with `when { expression { false } }`; remove
    that `when` block from both CI Jenkinsfiles to re-enable it.
-5. SonarQube analysis. The quality-gate wait is temporarily disabled until the
-   SonarQube-to-Jenkins webhook is verified.
+5. Non-blocking SonarQube analysis. A scanner outage marks the stage unstable
+   without suppressing image delivery. The quality-gate wait is temporarily
+   disabled until the SonarQube-to-Jenkins webhook is verified.
 6. BuildKit multi-platform build for `linux/amd64,linux/arm64`.
 7. Docker Hub push using the Jenkins `dockerhub` credential.
 8. Trivy image scanning.

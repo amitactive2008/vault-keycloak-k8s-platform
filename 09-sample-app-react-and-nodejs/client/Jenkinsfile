@@ -86,16 +86,18 @@ pipeline {
 
     stage('SonarQube') {
       steps {
-        container('sonar') {
-          withSonarQubeEnv('mysonarqube') {
-            sh """
-              sonar-scanner \
-                -Dsonar.projectKey=${SONAR_PROJECT} \
-                -Dsonar.projectName='Sample React App Team A Client' \
-                -Dsonar.sources=${APP_DIR}/src \
-                -Dsonar.exclusions=**/*.test.js,**/setupTests.js,**/reportWebVitals.js \
-                -Dsonar.javascript.lcov.reportPaths=${APP_DIR}/coverage/lcov.info
-            """
+        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+          container('sonar') {
+            withSonarQubeEnv('mysonarqube') {
+              sh """
+                sonar-scanner \
+                  -Dsonar.projectKey=${SONAR_PROJECT} \
+                  -Dsonar.projectName='Sample React App Team A Client' \
+                  -Dsonar.sources=${APP_DIR}/src \
+                  -Dsonar.exclusions=**/*.test.js,**/setupTests.js,**/reportWebVitals.js \
+                  -Dsonar.javascript.lcov.reportPaths=${APP_DIR}/coverage/lcov.info
+              """
+            }
           }
         }
       }

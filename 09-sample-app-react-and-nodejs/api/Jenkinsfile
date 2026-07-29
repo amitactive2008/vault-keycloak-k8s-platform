@@ -86,15 +86,17 @@ pipeline {
 
     stage('SonarQube') {
       steps {
-        container('sonar') {
-          withSonarQubeEnv('mysonarqube') {
-            sh """
-              sonar-scanner \
-                -Dsonar.projectKey=${SONAR_PROJECT} \
-                -Dsonar.projectName='Sample React App Team A API' \
-                -Dsonar.sources=${APP_DIR} \
-                -Dsonar.exclusions=**/node_modules/**,**/reports/**
-            """
+        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+          container('sonar') {
+            withSonarQubeEnv('mysonarqube') {
+              sh """
+                sonar-scanner \
+                  -Dsonar.projectKey=${SONAR_PROJECT} \
+                  -Dsonar.projectName='Sample React App Team A API' \
+                  -Dsonar.sources=${APP_DIR} \
+                  -Dsonar.exclusions=**/node_modules/**,**/reports/**
+              """
+            }
           }
         }
       }
