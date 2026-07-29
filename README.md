@@ -17,7 +17,8 @@ A complete local platform running on a [kind](https://kind.sigs.k8s.io/) cluster
 | **Identity / SSO** | Keycloak 26.3.3 — PostgreSQL backend |
 | **Vault OIDC auth** | Vault OIDC → Keycloak `kind` realm |
 | **kubectl SSO** | kube-apiserver OIDC → Keycloak; per-team RBAC |
-| **Sample app** | 2-tier webapp with Vault Agent secret injection |
+| **Operations** | Prometheus/Grafana monitoring + Jenkins/SonarQube CI/CD |
+| **Sample apps** | Team A and Team B workloads with Vault Agent secret injection |
 
 ---
 
@@ -81,54 +82,49 @@ kube-apiserver ──── OIDC ────► Keycloak
 
 ---
 
+## Start here
+
+The numbered directories are the deployment order. Complete modules 01–04 for
+the core platform, then add OIDC, applications, monitoring, and CI/CD as needed.
+Each module has its own README with commands and troubleshooting notes.
+
+For repository work:
+
+```bash
+# See available maintenance commands
+make help
+
+# Run offline syntax, link, Helm, and Kustomize checks
+make validate
+```
+
+Contributors and coding assistants should read [AGENTS.md](AGENTS.md) before
+editing. See [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow and
+[SECURITY.md](SECURITY.md) before handling credentials.
+
+---
+
 ## Repository Structure
 
-```
-vault-keycloak-k8s-platform/
-│
-├── 01-cloud-provider-kind-setup-with-gw-api/   ← kind cluster + Envoy Gateway + wildcard TLS
-│   ├── kind.yaml                                ← cluster definition (no extraPortMappings)
-│   ├── gateway-infra.yaml                       ← GatewayClass, Gateway, HTTPRoutes
-│   └── cert-manager.yaml                        ← ClusterIssuers + Certificates (CA + wildcard)
-│
-├── 02-vault/                                    ← Vault Helm install + init + unseal
-│   ├── README.md
-│   ├── vault.yaml                               ← Vault Helm values (HA/Raft, ingress disabled)
-│   ├── vault-httproute.yaml                     ← HTTPRoute for vault.kind.local
-│   └── cluster-keys.json                        ← DO NOT COMMIT — unseal keys + root token
-│
-├── 03-keycloak/                                 ← Keycloak Helm chart + realm import
-│   ├── README.md
-│   ├── values.yaml                              ← user-facing overrides (ingress disabled)
-│   ├── keycloak-httproute.yaml                  ← HTTPRoute for keycloak.kind.local
-│   ├── kind-realm.json                          ← realm definition (groups + users)
-│   ├── create-realm.sh                          ← kcadm-based realm creation (idempotent)
-│   └── keycloak-chart/                          ← local Helm chart
-│
-├── 04-vault-keycloak-integration/               ← Vault OIDC → Keycloak wiring
-│   ├── README.md
-│   ├── setup.sh                                 ← idempotent integration script
-│   └── policies/
-│       ├── devops.hcl
-│       ├── team-a.hcl
-│       └── team-b.hcl
-│
-├── 05-k8s-oidc-with-keycloak/                  ← kubectl SSO via Keycloak (optional)
-│   ├── README.md
-│   ├── setup.sh
-│   ├── kubeconfig-oidc.yaml                     ← generated kubeconfig (by setup.sh)
-│   └── rbac/
-│       ├── devops-cluster-admin.yaml
-│       ├── team-a.yaml
-│       └── team-b.yaml
-│
-└── 06-application/
-    └── team-a-webapp/                           ← 2-tier demo app with Vault Agent injection
-        ├── README.md
-        ├── values.yaml
-        ├── vault-setup.sh                       ← configure Vault for the app (run once)
-        └── webapp-chart/                        ← local Helm chart
-```
+| Step | Module | Purpose | Status |
+|---:|---|---|---|
+| 01 | [Cluster, Gateway API, and TLS](01-cloud-provider-kind-setup-with-gw-api/README.md) | kind, cloud-provider-kind, Envoy Gateway, cert-manager | Ready |
+| 02 | [Vault](02-vault/README.md) | HA/Raft secrets platform and HTTPRoute | Ready |
+| 03 | [Keycloak](03-keycloak/README.md) | Identity provider, PostgreSQL, and realm import | Ready |
+| 04 | [Vault ↔ Keycloak](04-vault-keycloak-integration/README.md) | OIDC login and team policies | Ready |
+| 05 | [Kubernetes OIDC](05-k8s-oidc-with-keycloak/README.md) | kubectl SSO and namespace RBAC | Optional |
+| 06 | [Team A webapp](06-application/team-a-webapp/README.md) | Helm sample with Vault Agent injection | Optional |
+| 07 | [Monitoring](07-monitoring/README.md) | Prometheus, Grafana, Alertmanager, blackbox exporter | Optional |
+| 08 | [Jenkins and SonarQube](08-jenkins/README.md) | CI/CD, code quality, JCasC, and team jobs | Optional |
+| 09 | [Team A React + Node.js app](09-sample-app-react-and-nodejs/README.md) | Kustomize deployments and CI/CD manifests | Optional |
+| 10 | [Team B React app](10-sample-react-app-team-b/README.md) | Team-isolated variant and pipelines | Optional |
+| 11 | [Argo CD](11-argocd/README.md) | GitOps layer | Planned |
+| 12 | [Velero backup](12-valero-backup/README.md) | Backup and restore | Planned |
+| 13 | [Istio](13-istio/README.md) | Service mesh experiments | Planned |
+
+Generated files such as Vault keys, OIDC kubeconfigs, CA copies, and Jenkins
+runtime credentials are deliberately ignored. Copy the corresponding
+`.example` or `-template` file when one is provided.
 
 ---
 
@@ -303,6 +299,19 @@ helm install team-a-webapp ./webapp-chart \
 
 # Open: https://team-a-webapp.kind.local
 ```
+
+---
+
+## Additional optional modules
+
+After the core setup, continue with the module-specific guides:
+
+- [07 — Monitoring](07-monitoring/README.md)
+- [08 — Jenkins and SonarQube](08-jenkins/README.md)
+- [09 — Team A React + Node.js application](09-sample-app-react-and-nodejs/README.md)
+- [10 — Team B application](10-sample-react-app-team-b/README.md)
+
+Modules 11–13 are documented placeholders and are not yet deployable.
 
 ---
 
