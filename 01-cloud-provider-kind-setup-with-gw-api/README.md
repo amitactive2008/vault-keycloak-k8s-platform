@@ -134,8 +134,13 @@ For the 08-jenkins setup, a kubeconfig with the in-cluster API server address is
 kind export kubeconfig --name vault --kubeconfig ./vault-kube-config
 
 # Change API server endpoint to in-cluster address (used by Jenkins)
-sed -i 's|^[[:space:]]*server:.*|    server: https://kubernetes.default.svc:443|' vault-kube-config
+KUBECONFIG=./vault-kube-config kubectl config set-cluster kind-vault \
+  --server=https://kubernetes.default.svc:443
 ```
+
+Using `kubectl config set-cluster` keeps this step portable across macOS and
+Linux. The generated `vault-kube-config` contains client credentials and is
+ignored by Git; never commit it.
 
 Verify all nodes are Ready:
 

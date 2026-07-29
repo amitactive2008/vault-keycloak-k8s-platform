@@ -68,10 +68,12 @@ and seeders, and starts the server.
 └── vault-setup.sh                  # Vault, MySQL Secret, SA, and local DNS setup
 ```
 
-The older `api/cd/k8s` and `client/cd/k8s` Kustomize examples are retained for
-study, but the Team A Jenkins CD jobs use `kubernetes/` as the canonical
-deployment manifests. They do not require External Secrets Operator or the
-Secrets Store CSI driver.
+Older Kustomize and cloud-oriented examples remain under `kubernetes/base/`,
+`kubernetes/overlays/`, and `kubernetes/k8s-manifests/` for study. The Team A
+Jenkins CD jobs use `kubernetes/{mysql,api,client}`, `kubernetes/rbac.yaml`, and
+`kubernetes/httproute.yaml` as the canonical local deployment manifests. The
+canonical path uses Gateway API and Vault Agent injection; it does not require
+nginx Ingress, External Secrets Operator, or the Secrets Store CSI driver.
 
 ## Jenkins jobs
 

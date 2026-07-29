@@ -120,7 +120,7 @@ BuildKit daemon (buildkitd, non-TLS, namespace: jenkins)
 
 | Kind | Name | Purpose |
 |---|---|---|
-| `Deployment` | `jenkins` | Jenkins controller, 10Gi PVC |
+| `StatefulSet` | `jenkins` | Jenkins controller, 10Gi PVC |
 | `Deployment` | `sonarqube-sonarqube` | SonarQube, 10Gi PVC |
 | `Deployment` | `buildkitd` | Rootless BuildKit for Docker builds |
 | `ClusterRole` | `jenkins-agent-runner` | Agent pod lifecycle management |
@@ -142,15 +142,21 @@ Jenkins
 │   ├── vault/              ← Vault management pipelines
 │   └── keycloak/           ← Keycloak IAM pipelines
 ├── team-a/
-│   ├── ci/
-│   │   └── react-app       ← React frontend CI (client/Jenkinsfile)
-│   └── cd/
-│       └── react-app       ← React frontend CD (jenkins/Jenkinsfile-cd-local)
+│   └── sample-react-app/
+│       ├── api/
+│       │   ├── ci
+│       │   └── cd
+│       └── client/
+│           ├── ci
+│           └── cd
 └── team-b/
-    ├── ci/
-    │   └── react-app
-    └── cd/
-        └── react-app
+    └── sample-react-app/
+        ├── api/
+        │   ├── ci
+        │   └── cd
+        └── client/
+            ├── ci
+            └── cd
 ```
 
 ---
@@ -178,22 +184,27 @@ Jenkins
 
 ## Installation
 
-### Step 1 — Add DNS entries and Create jenkisn NS
+### Step 1 — Add DNS entries and create the Jenkins namespace
 
 ```bash
 sudo sh -c 'echo "127.0.0.1 jenkins.kind.local sonarqube.kind.local" >> /etc/hosts'
 
-kubectl create ns jenkins
+kubectl create namespace jenkins --dry-run=client -o yaml | kubectl apply -f -
 ```
 
 ### Step 2 — Fill in real credentials
 
-Edit the credentials file with your actual values:
+Create the ignored runtime credentials file from the safe template, then replace
+every placeholder with your actual values:
 
 ```bash
-# The file already exists — edit it directly
+cp 08-jenkins/setup/credentials-template.yaml \
+  08-jenkins/setup/credentials.yaml
 vim 08-jenkins/setup/credentials.yaml
 ```
+
+If the ignored file already exists, do not overwrite it; edit it in place.
+Never commit this file or paste its values into an issue or build log.
 
 The Secret contains three credentials:
 
@@ -309,7 +320,7 @@ cd 08-jenkins && ./reload-jobs.sh jobs/jenkins-jobs-team-a.yaml
 
 | Step | Action |
 |------|--------|
-| Validate | Checks each YAML file with `python3 yaml.safe_load` — exits on error |
+| Validate | Runs `kubectl apply --dry-run=client` for each YAML file — exits on error |
 | Apply | Runs `kubectl apply -f` for each ConfigMap |
 | Reload | POSTs directly to `http://localhost:8080/reload-configuration-as-code/` on the Jenkins pod |
 | Confirm | Waits until `config.xml` files appear under `/var/jenkins_home/jobs` |
@@ -486,7 +497,7 @@ curl -sf https://jenkins.kind.local/login | grep -c "Jenkins"
 curl -sf https://sonarqube.kind.local/api/system/status | python3 -m json.tool
 
 # Check Jenkins OIDC config via JCasC
-kubectl exec -n jenkins deployment/jenkins -c jenkins -- \
+kubectl exec -n jenkins statefulset/jenkins -c jenkins -- \
   cat /var/jenkins_home/casc_configs/security.yaml 2>/dev/null | grep -A5 "oic:"
 
 # Verify folder structure in Jenkins
@@ -532,7 +543,7 @@ helm upgrade jenkins jenkins/jenkins \
   --timeout 15m
 
 # 5. Verify
-kubectl rollout status deployment/jenkins -n jenkins
+kubectl rollout status statefulset/jenkins -n jenkins
 curl -sf https://jenkins.kind.local/login
 ```
 
@@ -593,26 +604,26 @@ helm rollback sonarqube -n sonarqube
 
 ## Known limitations
 
-### SonarQube — No Keycloak SSO (Community Edition 2026.x)
+### SonarQube OIDC is provided by a community plugin
 
-The `sonar-auth-oidc` community plugin (vaulttec v2.1.1) depends on `org.sonar.api.web.ServletFilter` which was **removed** from the SonarQube Plugin API in the 2026.x series. The plugin crashes SonarQube at startup.
+SonarQube Community does not provide the repository's Keycloak integration by
+itself. This setup installs `sonar-auth-oidc` v3.0.0 from the URL pinned in
+`sonarqube-values.yaml`, then `setup.sh` configures its issuer, client, and
+groups settings. Treat a SonarQube or plugin upgrade as a compatibility change:
+test it before upgrading the study environment.
 
-**SonarQube Community 2026.x does NOT have built-in OIDC or SAML support.**
-
-Alternatives:
-- Monitor https://github.com/vaulttec/sonar-auth-oidc for a new release compatible with SonarQube 2026+
-- Upgrade to **SonarQube Developer Edition** (includes built-in SAML/OIDC)
-- Use SonarQube's built-in GitHub/GitLab OAuth if those SCM providers are in use
-
-**Current state**: SonarQube uses **local authentication** (admin/admin). Groups (`devops`, `team-a`, `team-b`) and project permissions are provisioned by `setup.sh` via the SonarQube REST API and take effect when SSO is eventually added.
+If the plugin prevents SonarQube from starting, remove or update the pinned
+plugin, redeploy SonarQube, and use the local `admin` account while diagnosing
+the compatibility problem. The Keycloak group and project permissions created
+by `setup.sh` remain useful after OIDC is restored.
 
 ### Jenkins — local `admin` user (EscapeHatch login)
 
 With OIDC as the security realm, the **"Sign in"** button on the Jenkins UI always redirects to Keycloak. The local `admin` user bypasses Keycloak via the **EscapeHatch** feature of the oic-auth plugin.
 
-**Login URL:** `https://jenkins.kind.local/login`
+**Login URL:** `https://jenkins.kind.local/securityRealm/escapeHatch`
 
-The `/login` page shows a username/password form (not a Keycloak redirect). Use:
+The EscapeHatch page shows the local username/password form. Use:
 
 | Field | Value |
 |-------|-------|
@@ -627,7 +638,8 @@ This gives full admin access (`Overall/Administer`) — same as the `devops` Key
 
 After logging in via the EscapeHatch, create an API token for scripted access:
 
-1. Log in at `https://jenkins.kind.local/login` with `admin` / `Admin@Jenkins2024!`
+1. Log in at `https://jenkins.kind.local/securityRealm/escapeHatch` with the
+   configured local administrator credentials
 2. Go to **admin → Configure → API Token → Add New Token**
 3. Use that token for API calls:
 
@@ -644,7 +656,7 @@ Alternatively, log in via Keycloak as `devops-user-1` (password: `password`) and
 | Symptom | Cause | Fix |
 |---|---|---|
 | Jenkins login fails with "Login provider denied" | Keycloak `groups` in scope | Verify `scopes: "openid email profile"` (no `groups`) in values |
-| Jenkins shows no Keycloak button | oic-auth plugin not installed | Check: `kubectl exec -n jenkins deployment/jenkins -- ls /var/jenkins_home/plugins \| grep oic` |
+| Jenkins shows no Keycloak button | oic-auth plugin not installed | Check: `kubectl exec -n jenkins statefulset/jenkins -- ls /var/jenkins_home/plugins \| grep oic` |
 | team-a user sees all jobs | RBAC not applied | Re-run `./setup.sh` — JCasC should provision roles |
 | SonarQube OIDC button missing | Plugin not loaded or version incompatible | Check logs: `kubectl logs -n sonarqube -l app=sonarqube-sonarqube \| grep -i oidc` |
 | SonarQube → Keycloak HTTPS fails | CA cert not in JVM trust store | Verify `caCerts.enabled: true` and `kind-local-ca-cert` Secret exists in `sonarqube` ns |
@@ -655,11 +667,11 @@ Alternatively, log in via Keycloak as `devops-user-1` (password: `password`) and
 
 ```bash
 # Jenkins: view installed plugins
-kubectl exec -n jenkins deployment/jenkins -c jenkins -- \
+kubectl exec -n jenkins statefulset/jenkins -c jenkins -- \
   ls /var/jenkins_home/plugins | grep -v ".jpi.pinned"
 
 # Jenkins: view JCasC applied config
-kubectl exec -n jenkins deployment/jenkins -c jenkins -- \
+kubectl exec -n jenkins statefulset/jenkins -c jenkins -- \
   cat /var/jenkins_home/casc_configs/security.yaml
 
 # SonarQube: check OIDC plugin is loaded
