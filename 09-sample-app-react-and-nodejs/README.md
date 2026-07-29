@@ -93,7 +93,8 @@ The CI jobs perform:
 4. OWASP Dependency-Check using the Jenkins `NVD_API_KEY` credential. This
    stage is temporarily skipped with `when { expression { false } }`; remove
    that `when` block from both CI Jenkinsfiles to re-enable it.
-5. SonarQube analysis and a non-blocking quality gate for this study environment.
+5. SonarQube analysis. The quality-gate wait is temporarily disabled until the
+   SonarQube-to-Jenkins webhook is verified.
 6. BuildKit multi-platform build for `linux/amd64,linux/arm64`.
 7. Docker Hub push using the Jenkins `dockerhub` credential.
 8. Trivy image scanning.
@@ -248,7 +249,25 @@ The seed data in the upstream study application creates
 
 The first NVD synchronization is large. Both jobs share
 `/dependency-check-data`; one build updates it while the other waits on
-`odc.update.lock`. This is expected and avoids database corruption.
+`odc.update.lock`. This is expected and avoids database corruption. The stage
+is currently disabled in both CI Jenkinsfiles so this initial import does not
+block application delivery.
+
+### SonarQube scanner returns HTTP 401
+
+Verify the runtime token Secret exists:
+
+```bash
+kubectl get secret sonarqube-token -n jenkins
+```
+
+If it is missing or invalid, generate a SonarQube analysis token, store it in
+that Secret, and restart Jenkins so JCasC refreshes credential
+`sonarqube-token`. Never print or commit the token.
+
+The quality-gate wait is also temporarily disabled in both CI Jenkinsfiles. Its
+webhook timeout otherwise marks the overall build `ABORTED` after later stages
+continue. Remove the `when` condition after verifying the webhook end to end.
 
 ### CI does not start CD
 

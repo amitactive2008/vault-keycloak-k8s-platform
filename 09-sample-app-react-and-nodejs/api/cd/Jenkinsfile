@@ -26,13 +26,6 @@ pipeline {
   }
 
   stages {
-    stage('Checkout Platform') {
-      steps {
-        checkout scm
-        sh 'git log -1 --oneline'
-      }
-    }
-
     stage('Apply API Infrastructure') {
       steps {
         withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {

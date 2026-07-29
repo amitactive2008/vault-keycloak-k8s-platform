@@ -101,6 +101,10 @@ pipeline {
     }
 
     stage('Quality Gate') {
+      // Re-enable after the SonarQube-to-Jenkins webhook is verified.
+      when {
+        expression { false }
+      }
       steps {
         catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
           timeout(time: 2, unit: 'MINUTES') {
