@@ -9,8 +9,6 @@ pipeline {
   parameters {
     string(name: 'IMAGE_TAG', defaultValue: 'team-a-latest',
            description: 'Client image tag produced by Team A CI')
-    string(name: 'EXPECTED_CONTEXT', defaultValue: 'external',
-           description: 'Required context name in the Vault-injected kubeconfig')
   }
 
   environment {
@@ -20,6 +18,7 @@ pipeline {
     DEPLOYMENT  = 'sample-react-app-client'
     MANIFESTS   = '09-sample-app-react-and-nodejs/kubernetes'
     KUBECONFIG  = '/vault/secrets/kubeconfig'
+    EXPECTED_CONTEXT = 'external'
   }
 
   options {
