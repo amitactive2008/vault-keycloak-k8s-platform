@@ -1,0 +1,89 @@
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile '08-jenkins/Jenkins-agent-cd.yaml'
+      defaultContainer 'kubectl'
+    }
+  }
+
+  parameters {
+    string(name: 'IMAGE_TAG', defaultValue: 'team-a-latest',
+           description: 'API image tag produced by Team A CI')
+  }
+
+  environment {
+    REGISTRY   = 'amitactive2008'
+    IMAGE_NAME = 'sample-react-app-api'
+    NAMESPACE  = 'team-a'
+    DEPLOYMENT = 'sample-react-app-api'
+    MANIFESTS  = '09-sample-app-react-and-nodejs/kubernetes'
+  }
+
+  options {
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 15, unit: 'MINUTES')
+  }
+
+  stages {
+    stage('Checkout Platform') {
+      steps {
+        checkout scm
+        sh 'git log -1 --oneline'
+      }
+    }
+
+    stage('Apply API Infrastructure') {
+      steps {
+        withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
+          sh '''
+            kubectl apply -f "$MANIFESTS/rbac.yaml"
+            kubectl apply -f "$MANIFESTS/mysql/"
+            kubectl apply -f "$MANIFESTS/api/"
+            kubectl apply -f "$MANIFESTS/httproute.yaml"
+          '''
+        }
+      }
+    }
+
+    stage('Deploy API Image') {
+      steps {
+        withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
+          sh """
+            kubectl set image deployment/${DEPLOYMENT} \
+              api=${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG} \
+              -n ${NAMESPACE}
+          """
+        }
+      }
+    }
+
+    stage('Verify API') {
+      steps {
+        withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
+          sh '''
+            kubectl rollout status statefulset/sample-react-app-mysql \
+              -n "$NAMESPACE" --timeout=5m
+            kubectl rollout status deployment/"$DEPLOYMENT" \
+              -n "$NAMESPACE" --timeout=7m
+            kubectl exec -n "$NAMESPACE" deployment/"$DEPLOYMENT" -c api -- \
+              wget -qO- http://localhost:5000/live
+            kubectl exec -n "$NAMESPACE" deployment/"$DEPLOYMENT" -c api -- \
+              wget -qO- http://localhost:5000/health
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "API deployed: ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}"
+    }
+    failure {
+      withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
+        sh 'kubectl get pods -n "$NAMESPACE" || true'
+      }
+    }
+  }
+}

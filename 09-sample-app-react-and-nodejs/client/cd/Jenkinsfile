@@ -1,96 +1,83 @@
 pipeline {
   agent {
     kubernetes {
-      yamlFile '09-sample-app-react-and-nodejs/client/cd/Jenkins-agent-cd.yaml'
+      yamlFile '08-jenkins/Jenkins-agent-cd.yaml'
       defaultContainer 'kubectl'
     }
   }
 
   parameters {
-    string(
-      name: 'API_IMAGE_TAG',
-      defaultValue: 'latest',
-      description: 'API image tag to deploy (e.g. Jenkins build number from api-ci)'
-    )
-    string(
-      name: 'CLIENT_IMAGE_TAG',
-      defaultValue: 'latest1',
-      description: 'Client image tag (leave as latest1 unless client-ci ran too)'
-    )
+    string(name: 'IMAGE_TAG', defaultValue: 'team-a-latest',
+           description: 'Client image tag produced by Team A CI')
+  }
+
+  environment {
+    REGISTRY   = 'amitactive2008'
+    IMAGE_NAME = 'sample-react-app-client'
+    NAMESPACE  = 'team-a'
+    DEPLOYMENT = 'sample-react-app-client'
+    MANIFESTS  = '09-sample-app-react-and-nodejs/kubernetes'
+  }
+
+  options {
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 10, unit: 'MINUTES')
   }
 
   stages {
-
-    stage('Stage 1: Checkout') {
+    stage('Checkout Platform') {
       steps {
-        echo "Checking out code..."
-        git branch: 'main', url: 'https://github.com/amitactive2008/vault-keycloak-k8s-platform.git'
+        checkout scm
+        sh 'git log -1 --oneline'
       }
     }
 
-    stage('Stage 2: Update Image Tags') {
+    stage('Apply Client Infrastructure') {
       steps {
-        echo "Patching kustomization.yaml with new image tags..."
-        sh """
-          sed -i '/name: amitactive2008\\/api/{n; s/newTag: .*/newTag: \\"${params.API_IMAGE_TAG}\\"/}' \\
-            09-sample-app-react-and-nodejs/kubernetes/overlays/local/kustomization.yaml
-
-          sed -i '/name: amitactive2008\\/client/{n; s/newTag: .*/newTag: \\"${params.CLIENT_IMAGE_TAG}\\"/}' \\
-            09-sample-app-react-and-nodejs/kubernetes/overlays/local/kustomization.yaml
-
-          echo '=== Updated image tags ==='
-          grep -A1 'name: amitactive2008' 09-sample-app-react-and-nodejs/kubernetes/overlays/local/kustomization.yaml | grep -v '^--\$'
-        """
-      }
-    }
-
-    stage('Stage 3: Deploy') {
-      steps {
-        echo "Deploying to Kind cluster (namespace: team-a)..."
         withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
           sh '''
-            # Migration job is immutable — must delete before re-apply
-            kubectl delete job database-migration -n team-a --ignore-not-found
-
-            # Apply the full local overlay to the cluster
-            kubectl apply -k 09-sample-app-react-and-nodejs/kubernetes/overlays/local
+            kubectl apply -f "$MANIFESTS/client/"
+            kubectl apply -f "$MANIFESTS/httproute.yaml"
           '''
         }
       }
     }
 
-    stage('Stage 4: Verify Rollout') {
+    stage('Deploy Client Image') {
       steps {
-        echo "Waiting for rollout to complete..."
         withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
-          sh '''
-            kubectl rollout status deployment/api-deployment    -n team-a --timeout=5m
-            kubectl rollout status deployment/client-deployment -n team-a --timeout=5m
-
-            echo ""
-            echo "=== Deployed Pods ==="
-            kubectl get pods -n team-a
-
-            echo ""
-            echo "=== API Health Check ==="
-            POD=$(kubectl get pod -l app.kubernetes.io/name=api -n team-a \
-                    -o jsonpath="{.items[0].metadata.name}")
-            kubectl exec -n team-a "$POD" -- wget -qO- http://localhost:5000/health || true
-            echo ""
-            kubectl exec -n team-a "$POD" -- wget -qO- http://localhost:5000/live || true
-          '''
+          sh """
+            kubectl set image deployment/${DEPLOYMENT} \
+              client=${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG} \
+              -n ${NAMESPACE}
+          """
         }
       }
     }
 
+    stage('Verify Client') {
+      steps {
+        withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
+          sh '''
+            kubectl rollout status deployment/"$DEPLOYMENT" \
+              -n "$NAMESPACE" --timeout=5m
+            kubectl exec -n "$NAMESPACE" deployment/"$DEPLOYMENT" -c client -- \
+              wget -qO- http://localhost/
+          '''
+        }
+      }
+    }
   }
 
   post {
     success {
-      echo "Deployed amitactive2008/api:${params.API_IMAGE_TAG} and amitactive2008/client:${params.CLIENT_IMAGE_TAG} to team-a namespace ✓"
+      echo "Client deployed: ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}"
     }
     failure {
-      echo "Deployment failed. Check: kubectl get pods -n team-a && kubectl describe pod -n team-a <pod>"
+      withCredentials([file(credentialsId: 'external-kubeconfig', variable: 'KUBECONFIG')]) {
+        sh 'kubectl get pods -n "$NAMESPACE" || true'
+      }
     }
   }
 }
