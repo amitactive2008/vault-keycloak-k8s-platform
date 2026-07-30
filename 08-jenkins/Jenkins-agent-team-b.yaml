@@ -24,10 +24,6 @@ spec:
     - name: buildkit-certs
       secret:
         secretName: buildkit-client-certs
-    - name: dependency-check-data
-      persistentVolumeClaim:
-        claimName: dependency-check-data
-
   containers:
     - name: jnlp
       image: jenkins/inbound-agent
@@ -63,16 +59,6 @@ spec:
           mountPath: /home/jenkins/agent
         - name: workspace-volume
           mountPath: /src
-
-    - name: dependency-check
-      image: owasp/dependency-check:latest
-      command: ["cat"]
-      tty: true
-      volumeMounts:
-        - name: workspace-volume
-          mountPath: /home/jenkins/agent
-        - name: dependency-check-data
-          mountPath: /dependency-check-data
 
     - name: docker-cli
       image: waynewu411/docker-cli:1.0

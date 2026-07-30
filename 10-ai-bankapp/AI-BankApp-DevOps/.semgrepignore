@@ -1,3 +1,0 @@
-# Retained only as upstream reference. Jenkins is the executable CI/CD system
-# for this module; its pipelines and deployable source remain in the scan.
-.github/workflows/

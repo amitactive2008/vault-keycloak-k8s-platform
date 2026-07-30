@@ -14,7 +14,6 @@ team-b/ai-bankapp/ci
   ├── Gitleaks
   ├── Checkstyle (audit)
   ├── Semgrep
-  ├── Dependency-Check/NVD (disabled)
   ├── Maven package (tests skipped)
   ├── BuildKit OCI image build
   ├── Trivy
@@ -47,26 +46,22 @@ renders them only in the ephemeral CI pod. MySQL and the Spring application
 also receive their database values from Vault Agent; this deployment does not
 create a Kubernetes Secret for database credentials.
 
-## Jenkins stage mapping
+## Jenkins stages
 
-The imported `.github/workflows/` files remain only as upstream reference.
-Because they are nested inside this module, GitHub does not execute them for
-the platform repository. Semgrep excludes that reference-only directory through
-`.semgrepignore`; it continues to scan the application source, Jenkins
-pipelines, and deployable manifests. Their relevant behavior is represented in
-Jenkins:
+Jenkins is the only CI/CD system for this module. The copied GitHub Actions,
+AWS/EC2, and Compose deployment artifacts were removed after their relevant
+local-platform behavior was implemented in the Jenkins pipelines.
 
-| Upstream action | Jenkins behavior |
+| Control | Jenkins behavior |
 |---|---|
 | Gitleaks | Blocking source scan |
-| Checkstyle | Audit-only, matching the upstream `|| true` behavior |
+| Checkstyle | Audit-only |
 | Semgrep | Blocking Java, OWASP Top 10, and secret rules |
-| OWASP Dependency-Check/NVD | Present but disabled as requested |
 | Maven build | `clean package -DskipTests` as requested |
 | Container build | Remote BuildKit |
 | Trivy | Blocks on fixed High/Critical findings before push |
-| Amazon ECR push | Replaced with Docker Hub |
-| EC2/Compose deployment | Replaced with namespace-scoped Kubernetes CD |
+| Registry push | Docker Hub immutable and `team-b-latest` tags |
+| Deployment | Namespace-scoped Kubernetes CD |
 | OWASP ZAP | Audit-only scan after rollout |
 
 The Maven baseline uses Spring Boot `3.5.14`, Tomcat `10.1.55`, Thymeleaf
@@ -74,8 +69,8 @@ The Maven baseline uses Spring Boot `3.5.14`, Tomcat `10.1.55`, Thymeleaf
 documented security floors; Trivy remains the blocking check for newly
 disclosed fixed vulnerabilities.
 
-Gitleaks scans the imported source tree, not the source repository's former Git
-history, because that history was not copied into this repository.
+Gitleaks scans the application source tree with `--no-git`; the imported
+repository's former Git history is not part of this repository.
 
 ## Vault paths
 
@@ -202,23 +197,12 @@ curl --fail https://ai-bankapp.kind.local/actuator/health
 
 The login and registration pages are at `/login` and `/register`.
 
-## Local Compose development
-
-Compose is optional and does not use Vault:
-
-```bash
-cp .env.example .env
-# Replace both placeholder passwords in .env.
-docker compose up --build
-```
-
-The `.env` file is ignored by Git.
-
 ## Known limitations
 
-- Maven tests and the NVD-backed Dependency-Check stage are deliberately
-  skipped. This reduces pipeline assurance.
-- Checkstyle and ZAP are audit-only, mirroring the imported workflow.
+- Maven tests are deliberately skipped, and this Team B pipeline does not run
+  NVD-backed Dependency-Check. Trivy still blocks fixed High/Critical image
+  vulnerabilities. This reduces pipeline assurance.
+- Checkstyle and ZAP are audit-only.
 - Floating scanner and Ollama container tags are appropriate only for this
   study setup; pin digests before treating builds as reproducible.
 - TinyLlama receives the signed-in user's balance and recent transaction

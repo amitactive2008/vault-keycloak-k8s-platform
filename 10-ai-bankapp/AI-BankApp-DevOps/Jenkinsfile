@@ -1,5 +1,4 @@
-// Team B AI BankApp CI. The NVD-backed Dependency-Check stage and Maven tests
-// are intentionally disabled for this study pipeline as requested.
+// Team B AI BankApp CI. Maven tests are intentionally skipped as requested.
 pipeline {
   agent {
     kubernetes {
@@ -60,29 +59,6 @@ pipeline {
                 --error \
                 --json-output semgrep-report.json \
                 "$SCAN_ROOT"
-            '''
-          }
-        }
-      }
-    }
-
-    stage('Dependency Check (NVD)') {
-      when {
-        expression { false }
-      }
-      steps {
-        container('dependency-check') {
-          dir("${APP_DIR}") {
-            sh '''
-              /usr/share/dependency-check/bin/dependency-check.sh \
-                --scan . \
-                --project team-b-ai-bankapp \
-                --data /dependency-check-data \
-                --suppression suppression.xml \
-                --out reports \
-                --format HTML \
-                --format JSON \
-                --failOnCVSS 7
             '''
           }
         }
@@ -173,7 +149,7 @@ pipeline {
 
   post {
     always {
-      archiveArtifacts artifacts: '10-ai-bankapp/AI-BankApp-DevOps/gitleaks-report.json,10-ai-bankapp/AI-BankApp-DevOps/semgrep-report.json,10-ai-bankapp/AI-BankApp-DevOps/trivy-report.json,10-ai-bankapp/AI-BankApp-DevOps/reports/**,10-ai-bankapp/AI-BankApp-DevOps/target/*.jar',
+      archiveArtifacts artifacts: '10-ai-bankapp/AI-BankApp-DevOps/gitleaks-report.json,10-ai-bankapp/AI-BankApp-DevOps/semgrep-report.json,10-ai-bankapp/AI-BankApp-DevOps/trivy-report.json,10-ai-bankapp/AI-BankApp-DevOps/target/*.jar',
         allowEmptyArchive: true
     }
     success {
