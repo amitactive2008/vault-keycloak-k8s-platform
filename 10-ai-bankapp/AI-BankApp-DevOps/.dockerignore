@@ -4,6 +4,9 @@
 .vscode
 screenshots
 target
+bankapp-image.tar
+*-report.json
+reports
 *.md
 *.yml
 *.yaml
