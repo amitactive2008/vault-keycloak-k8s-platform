@@ -51,13 +51,15 @@ pipeline {
         container('semgrep') {
           dir("${APP_DIR}") {
             sh '''
+              SCAN_ROOT="/src${WORKSPACE#/home/jenkins/agent}/${APP_DIR}"
+              test -d "$SCAN_ROOT"
               semgrep scan \
                 --config p/java \
                 --config p/owasp-top-ten \
                 --config p/secrets \
                 --error \
                 --json-output semgrep-report.json \
-                "/src/${APP_DIR}"
+                "$SCAN_ROOT"
             '''
           }
         }
