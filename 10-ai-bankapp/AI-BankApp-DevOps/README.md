@@ -51,7 +51,10 @@ create a Kubernetes Secret for database credentials.
 
 The imported `.github/workflows/` files remain only as upstream reference.
 Because they are nested inside this module, GitHub does not execute them for
-the platform repository. Their relevant behavior is represented in Jenkins:
+the platform repository. Semgrep excludes that reference-only directory through
+`.semgrepignore`; it continues to scan the application source, Jenkins
+pipelines, and deployable manifests. Their relevant behavior is represented in
+Jenkins:
 
 | Upstream action | Jenkins behavior |
 |---|---|

@@ -47,6 +47,12 @@ spec:
         - name: bankapp
           image: amitactive2008/ai-bankapp:team-b-latest
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
           command: ["/bin/sh", "-c"]
           args:
             - . /vault/secrets/application.env && exec java -jar app.jar
