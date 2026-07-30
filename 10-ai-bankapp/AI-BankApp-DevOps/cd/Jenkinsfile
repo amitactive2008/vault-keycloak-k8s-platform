@@ -37,6 +37,7 @@ pipeline {
           kubectl get --raw=/version >/dev/null
           kubectl auth can-i create deployments -n "$NAMESPACE" | grep -qx yes
           kubectl auth can-i patch statefulsets -n "$NAMESPACE" | grep -qx yes
+          kubectl auth can-i list replicasets -n "$NAMESPACE" | grep -qx yes
           kubectl auth can-i create secrets -n "$NAMESPACE" | grep -qx yes
           kubectl auth can-i create namespaces | grep -qx no
         '''

@@ -427,12 +427,14 @@ jenkins-cd-external pod
 
 jenkins-ci-team-b pod
 └── /vault/secrets/{dockerhub-username,dockerhub-token}
+```
 
 The Team B CI pod uses those credentials for both the application image and
 the `ai-bankapp-chart` OCI artifact. Its CD pod pulls the public chart with
 Helm and remains namespace-scoped; Kubernetes Secret access is limited to
-`team-b` and is required for Helm release metadata.
-```
+`team-b` and is required for Helm release metadata. Read-only ReplicaSet access
+lets Helm observe Deployment rollouts without granting direct ReplicaSet
+mutation.
 
 The CI and CD roles cannot read each other's paths. `agent-pre-populate-only`
 causes the build container to start only after Vault has rendered the files; a
@@ -701,6 +703,8 @@ Alternatively, log in via Keycloak as `devops-user-1` (password: `password`) and
 | SonarQube OIDC button missing | Plugin not loaded or version incompatible | Check logs: `kubectl logs -n sonarqube -l app=sonarqube-sonarqube \| grep -i oidc` |
 | SonarQube → Keycloak HTTPS fails | CA cert not in JVM trust store | Verify `caCerts.enabled: true` and `kind-local-ca-cert` Secret exists in `sonarqube` ns |
 | Jenkins agents stuck Pending | RBAC / ServiceAccount issue | `kubectl get events -n jenkins \| grep -i forbidden` |
+| Team B Helm wait reports `cannot list replicasets` | Team B CD role is stale | Apply `kubectl apply -f setup/team-b-rbac.yaml` |
+| BuildKit disconnects during a long build | Health probe settings are stale | Apply `kubectl apply -n jenkins -f setup/buildkitd.yaml` and wait for its rollout before starting CI |
 | SonarQube quality gate timeout | Webhook not configured | Re-run `./setup.sh` step 10 |
 
 ### Useful commands

@@ -226,6 +226,9 @@ The first CD run uses Helm's `--take-ownership` option to adopt resources
 created by the former raw-manifest pipeline without changing their stable names
 or selectors. Later runs use `--atomic` for rollback protection. The raw
 `kubernetes/` manifests were removed so Helm is the single deployment owner.
+The Team B Jenkins role can manage only the chart's namespace-scoped resources;
+its read-only ReplicaSet permission is used by Helm to wait for Deployment
+rollouts.
 
 ## Kubernetes resources
 
