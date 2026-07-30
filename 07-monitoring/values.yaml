@@ -191,16 +191,20 @@ grafana:
       email_attribute_name: email
       # groups claim (Keycloak groups mapper, full.path=false)
       groups_attribute_path: groups
-      # Global role: devops→Admin, team members→Editor
-      # Per-org roles are controlled by org_mapping below (takes precedence)
-      role_attribute_path: "contains(groups[*], 'devops') && 'Admin' || 'Editor'"
+      # Org lookup must return an array. setup.sh replaces org_mapping with
+      # the numeric IDs discovered after the organizations are created.
+      org_attribute_path: groups
+      # DevOps keeps Admin in the default admin org. Team users return None
+      # here and receive their role only from the per-org mapping below.
+      role_attribute_path: "contains(groups[*], 'devops') && 'Admin' || 'None'"
       role_attribute_strict: false
       # Multi-org mapping (Grafana 10.2+):
       #   devops  → Admin in admin, team-a, team-b orgs
       #   team-a  → Admin in team-a org only
       #   team-b  → Admin in team-b org only
-      # Organizations must exist before first SSO login (created by setup.sh)
-      org_mapping: "devops:admin:Admin devops:team-a:Admin devops:team-b:Admin team-a:team-a:Admin team-b:team-b:Admin"
+      # Organizations must exist before first SSO login. setup.sh writes the
+      # ID-based mapping through Grafana's SSO Settings API once they exist.
+      org_mapping: ""
       # Re-sync org assignments on every login (respects Keycloak group changes)
       skip_org_role_sync: false
       # Use PKCE for added security

@@ -139,8 +139,9 @@ The script is **idempotent** — safe to re-run. It:
 1. Updates CoreDNS to resolve ALL `*.kind.local` → Envoy Gateway ClusterIP
 2. Creates the `grafana` Keycloak OIDC client with a flat-name groups mapper
 3. Renames Grafana org 1 to `admin`; creates `team-a` and `team-b` orgs
-4. Creates a Prometheus datasource in each org
-5. Imports a namespace-scoped dashboard into `team-a` and `team-b` orgs
+4. Resolves the org IDs and applies ID-based OAuth organization mapping
+5. Creates a Prometheus datasource in each org
+6. Imports and verifies a namespace-scoped dashboard in each team org
 
 ---
 
@@ -166,6 +167,9 @@ The script is **idempotent** — safe to re-run. It:
 | `team-b-user-1` | `team-b` | team-b |
 
 Switch organizations from the user menu → **Switch Organization**.
+The switcher is shown only when the signed-in user belongs to more than one
+organization. After changing Keycloak groups or re-running `setup.sh`, sign out
+and back in so Grafana re-synchronizes the user's organization memberships.
 
 ### Grafana dashboards
 
@@ -310,6 +314,7 @@ prometheus:
 |---|---|---|
 | Grafana shows "Sign in with Keycloak" button but login fails | OIDC client not created / wrong secret | Re-run `./setup.sh` step 2 |
 | Grafana OIDC login succeeds but user has no org | Orgs not created yet | Re-run `./setup.sh` step 4 |
+| Grafana logs `strconv.Atoi` for an org name | Name-based OAuth mapping was loaded before setup | Re-run `./setup.sh`; it resolves and applies numeric org IDs |
 | Grafana user in wrong org after Keycloak group change | Org sync happens on login | Log out and back in; clear browser cookies |
 | Blackbox targets showing `probe_success 0` | DNS not updated in CoreDNS | Re-run `./setup.sh` step 1 |
 | Prometheus not scraping new namespaces | `serviceMonitorSelectorNilUsesHelmValues: true` | Already set to `false` in values.yaml |
