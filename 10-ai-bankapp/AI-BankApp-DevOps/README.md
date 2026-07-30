@@ -69,6 +69,11 @@ Jenkins:
 | EC2/Compose deployment | Replaced with namespace-scoped Kubernetes CD |
 | OWASP ZAP | Audit-only scan after rollout |
 
+The Maven baseline uses Spring Boot `3.5.14`, Tomcat `10.1.55`, and Thymeleaf
+`3.1.5.RELEASE`. Keep these versions at or above their documented security
+floors; Trivy remains the blocking check for newly disclosed fixed
+vulnerabilities.
+
 Gitleaks scans the imported source tree, not the source repository's former Git
 history, because that history was not copied into this repository.
 
