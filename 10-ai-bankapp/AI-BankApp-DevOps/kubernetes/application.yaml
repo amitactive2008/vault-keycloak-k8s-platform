@@ -53,6 +53,8 @@ spec:
               drop:
                 - ALL
             runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
           command: ["/bin/sh", "-c"]
           args:
             - . /vault/secrets/application.env && exec java -jar app.jar
