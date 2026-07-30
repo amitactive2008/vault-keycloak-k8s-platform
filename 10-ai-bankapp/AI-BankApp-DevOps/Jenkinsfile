@@ -56,7 +56,8 @@ pipeline {
                 --config p/owasp-top-ten \
                 --config p/secrets \
                 --error \
-                --json-output semgrep-report.json
+                --json-output semgrep-report.json \
+                "/src/${APP_DIR}"
             '''
           }
         }

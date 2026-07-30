@@ -61,6 +61,8 @@ spec:
       volumeMounts:
         - name: workspace-volume
           mountPath: /home/jenkins/agent
+        - name: workspace-volume
+          mountPath: /src
 
     - name: dependency-check
       image: owasp/dependency-check:latest
