@@ -111,7 +111,7 @@ pipeline {
                 --use --bootstrap
               docker buildx build \
                 --platform linux/amd64 \
-                --output type=oci,dest=bankapp-image.tar \
+                --output type=docker,dest=bankapp-image.tar \
                 .
             '''
           }
