@@ -70,8 +70,9 @@ Browser
     │  HTTPS (cert-manager wildcard cert)
     ▼
 Envoy Gateway (native-gateway)
-    ├── jenkins.kind.local      ──► jenkins:8080    (NS: jenkins)
-    └── sonarqube.kind.local    ──► sonarqube-sonarqube:9000  (NS: sonarqube)
+    ├── jenkins.kind.local           ──► jenkins:8080    (NS: jenkins)
+    ├── jenkins-resources.kind.local ──► jenkins:8080    (isolated static files)
+    └── sonarqube.kind.local         ──► sonarqube-sonarqube:9000  (NS: sonarqube)
 
 Jenkins (2.568.1-lts)
     │  OIDC auth callback
@@ -186,7 +187,7 @@ Jenkins
 ### Step 1 — Add DNS entries and create the Jenkins namespace
 
 ```bash
-sudo sh -c 'echo "127.0.0.1 jenkins.kind.local sonarqube.kind.local" >> /etc/hosts'
+sudo sh -c 'echo "127.0.0.1 jenkins.kind.local jenkins-resources.kind.local sonarqube.kind.local" >> /etc/hosts'
 
 kubectl create namespace jenkins --dry-run=client -o yaml | kubectl apply -f -
 ```
@@ -245,7 +246,7 @@ chmod +x setup.sh
 ```
 
 The script is **idempotent** — safe to re-run. It:
-1. Updates CoreDNS with `jenkins.kind.local` + `sonarqube.kind.local`
+1. Updates CoreDNS with the Jenkins, Jenkins resource-root, and SonarQube hosts
 2. Creates Keycloak OIDC clients (`jenkins`, `sonarqube`) with groups mapper
 3. Copies cert-manager CA cert to `sonarqube` namespace for HTTPS trust
 4. Applies namespace/RBAC/buildkitd manifests from `setup/`
@@ -462,6 +463,7 @@ unvalidated build parameter into a Vault path.
 | Service | URL | Local admin |
 |---|---|---|
 | Jenkins | https://jenkins.kind.local | Local demo admin — use `/securityRealm/escapeHatch` |
+| Jenkins resource root | https://jenkins-resources.kind.local | No direct login; isolated static build content |
 | SonarQube | https://sonarqube.kind.local | `admin` / `admin` |
 
 ### Jenkins SSO login
@@ -500,6 +502,11 @@ kubectl get httproute -n sonarqube
 
 # Jenkins health
 curl -sf https://jenkins.kind.local/login | grep -c "Jenkins"
+
+# Controller and security settings managed by JCasC
+kubectl exec -n jenkins jenkins-0 -c jenkins -- sh -c \
+  'grep -E "<numExecutors>|projectNamingStrategy" /var/jenkins_home/config.xml;
+   printf "JAVA_OPTS=%s\n" "$JAVA_OPTS"'
 
 # SonarQube health
 curl -sf https://sonarqube.kind.local/api/system/status | python3 -m json.tool
@@ -552,6 +559,12 @@ helm upgrade jenkins jenkins/jenkins \
 kubectl rollout status statefulset/jenkins -n jenkins
 curl -sf https://jenkins.kind.local/login
 ```
+
+The controller runs with zero executors, project names are checked by the
+Role-based Strategy, and OIDC user/group identifiers are explicitly
+case-sensitive. Jenkins also enforces its UI CSP. Build artifacts are served
+through `jenkins-resources.kind.local`, so do not disable
+`hudson.model.DirectoryBrowserSupport.CSP` to make reports render.
 
 **Plugin upgrades**: Update `installPlugins` in `jenkins-values.yaml` with pinned versions:
 ```yaml

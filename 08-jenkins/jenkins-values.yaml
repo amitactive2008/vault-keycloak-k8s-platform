@@ -52,13 +52,13 @@ controller:
       cpu: "2"
       memory: "2Gi"
 
-  # Skip setup wizard; suppress default CSP to allow SonarQube reports
-  javaOpts: "-Djenkins.install.runSetupWizard=false -Dhudson.model.DirectoryBrowserSupport.CSP="
+  # Skip the setup wizard. User-generated files are served from the isolated
+  # resource-root host instead of weakening DirectoryBrowserSupport CSP.
+  javaOpts: "-Djenkins.install.runSetupWizard=false"
 
   # Jenkins external URL — MUST be set for OAuth redirect URIs to work correctly.
   # Keycloak will redirect to <jenkinsUrl>/securityRealm/finishLogin after auth.
   jenkinsUrl: "https://jenkins.kind.local"
-  jenkinsUriPrefix: "/"
 
   # ── Health probes — TCP socket (no HTTP auth needed) ──────────────────────
   # Anonymous access is fully disabled. The Jenkins Helm chart v5.9.40 hardcodes
@@ -140,12 +140,15 @@ controller:
     configScripts:
 
       # ── 1. Jenkins core: location + authorization ─────────────────────────────
-      # NOTE: securityRealm (OIDC) is intentionally omitted from JCasC — it is
-      # configured post-install by setup.sh via the Jenkins API/CLI because the
-      # oic-auth plugin's JCasC schema varies significantly between plugin versions.
-      # Jenkins starts with local auth (admin/admin); OIDC is applied by setup.sh.
+      # OIDC, authorization, and core controller security are all owned by JCasC.
       security: |
         jenkins:
+          # defaultConfig is disabled, so core controller settings must also be
+          # declared here; the chart-level numExecutors value is not sufficient.
+          numExecutors: 0
+          projectNamingStrategy:
+            roleBased:
+              forceExistingJobs: false
           # ── Authentication: Keycloak OIDC (oic-auth v4.x) ─────────────────
           # oic-auth v4.x JCasC schema (from /configuration-as-code/schema):
           #   OicSecurityRealm: clientId, clientSecret, serverConfiguration,
@@ -165,6 +168,12 @@ controller:
               fullNameFieldName: "name"
               emailFieldName: "email"
               groupsFieldName: "groups"
+              # Explicit case-sensitive identities follow the secure default and
+              # match the lower-case users/groups provisioned by this repository.
+              userIdStrategy:
+                caseSensitive: {}
+              groupIdStrategy:
+                caseSensitive: {}
               disableSslVerification: true
               logoutFromOpenidProvider: true
               postLogoutRedirectUrl: "https://jenkins.kind.local"
@@ -245,12 +254,16 @@ controller:
                      entries:
                        - group: "team-b"
         security:
+          contentSecurityPolicy:
+            enforce: true
           gitHostKeyVerificationConfiguration:
             sshHostKeyVerificationStrategy: "noHostKeyVerificationStrategy"
         unclassified:
           location:
             url: "https://jenkins.kind.local/"
             adminAddress: ""
+          resourceRoot:
+            url: "https://jenkins-resources.kind.local/"
 
       # ── 2. Kubernetes cloud for agent pods ──────────────────────────────────
       kubernetes-cloud: |

@@ -4,7 +4,7 @@
 #
 # What this does:
 #   0. Checks prerequisites
-#   1. Updates CoreDNS — adds jenkins.kind.local + sonarqube.kind.local
+#   1. Updates CoreDNS — adds Jenkins, Jenkins resource, and SonarQube hosts
 #      to the Envoy Gateway hosts block (so in-cluster pods resolve them)
 #   2. Creates Keycloak OIDC clients:
 #        jenkins    (confidential, redirect: /securityRealm/finishLogin)
@@ -16,7 +16,7 @@
 #   5. Reports the Vault-backed Jenkins agent identities
 #   6. Adds Helm repos; installs / upgrades SonarQube
 #   7. Installs / upgrades Jenkins
-#   8. Applies HTTPRoutes (jenkins.kind.local, sonarqube.kind.local)
+#   8. Applies HTTPRoutes (Jenkins, Jenkins resources, and SonarQube)
 #   9. Waits for both services to be ready
 #  10. Configures SonarQube via API:
 #        - Enables OIDC plugin settings
@@ -87,8 +87,8 @@ done
 kubectl cluster-info &>/dev/null || { error "No cluster found"; exit 1; }
 info "Cluster: $(kubectl config current-context)"
 
-# ── Step 1: CoreDNS — add jenkins + sonarqube to *.kind.local resolution ──────
-section "Step 1 — Updating CoreDNS for jenkins.kind.local + sonarqube.kind.local"
+# ── Step 1: CoreDNS — add Jenkins + resource root + SonarQube hosts ───────────
+section "Step 1 — Updating CoreDNS for Jenkins and SonarQube hosts"
 
 GW_SVC=$(kubectl get svc -n envoy-gateway-system \
   -l gateway.envoyproxy.io/owning-gateway-name=native-gateway \
@@ -102,12 +102,12 @@ info "Envoy Gateway ClusterIP: ${GW_IP}"
 CURRENT_CORE=$(kubectl get configmap coredns -n kube-system \
   -o jsonpath='{.data.Corefile}' 2>/dev/null)
 NEEDS_UPDATE=false
-for host in jenkins.kind.local sonarqube.kind.local; do
+for host in jenkins.kind.local jenkins-resources.kind.local sonarqube.kind.local; do
   echo "$CURRENT_CORE" | grep -q "$host" || NEEDS_UPDATE=true
 done
 
 if $NEEDS_UPDATE; then
-  info "Adding jenkins + sonarqube entries to CoreDNS hosts block..."
+  info "Adding Jenkins, resource-root, and SonarQube entries to CoreDNS..."
   python3 - << PYEOF
 import subprocess, sys
 
@@ -122,6 +122,7 @@ hosts = [
     "team-a-webapp.kind.local",
     "sample.kind.local",
     "jenkins.kind.local",
+    "jenkins-resources.kind.local",
     "sonarqube.kind.local",
 ]
 hosts_block = "\n".join(f"           {gw_ip} {h}" for h in hosts)
@@ -168,7 +169,7 @@ PYEOF
   sleep 5
   info "CoreDNS updated ✓"
 else
-  warn "CoreDNS already has jenkins + sonarqube entries — skipping"
+  warn "CoreDNS already has Jenkins and SonarQube entries — skipping"
 fi
 
 # ── Step 2: Keycloak OIDC clients ─────────────────────────────────────────────
@@ -603,6 +604,6 @@ cat << EOF
 ╚══════════════════════════════════════════════════════════════════════════╝
 
 Add to /etc/hosts (if not already):
-  127.0.0.1 jenkins.kind.local sonarqube.kind.local
+  127.0.0.1 jenkins.kind.local jenkins-resources.kind.local sonarqube.kind.local
 
 EOF
