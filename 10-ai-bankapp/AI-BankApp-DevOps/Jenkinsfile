@@ -1,0 +1,180 @@
+// Team B AI BankApp CI. The NVD-backed Dependency-Check stage and Maven tests
+// are intentionally disabled for this study pipeline as requested.
+pipeline {
+  agent {
+    kubernetes {
+      yamlFile '08-jenkins/Jenkins-agent-team-b.yaml'
+      defaultContainer 'jnlp'
+    }
+  }
+
+  environment {
+    APP_DIR    = '10-ai-bankapp/AI-BankApp-DevOps'
+    REGISTRY   = 'amitactive2008'
+    IMAGE_NAME = 'ai-bankapp'
+    IMAGE_TAG  = "team-b-${BUILD_NUMBER}"
+  }
+
+  options {
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+    timeout(time: 60, unit: 'MINUTES')
+  }
+
+  stages {
+    stage('Gitleaks') {
+      steps {
+        container('gitleaks') {
+          dir("${APP_DIR}") {
+            sh '''
+              gitleaks detect --source . --no-git \
+                --report-format json \
+                --report-path gitleaks-report.json
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Checkstyle') {
+      steps {
+        container('maven') {
+          dir("${APP_DIR}") {
+            sh './mvnw checkstyle:check -DskipTests -B || true'
+          }
+        }
+      }
+    }
+
+    stage('Semgrep') {
+      steps {
+        container('semgrep') {
+          dir("${APP_DIR}") {
+            sh '''
+              semgrep scan \
+                --config p/java \
+                --config p/owasp-top-ten \
+                --config p/secrets \
+                --error \
+                --json-output semgrep-report.json
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Dependency Check (NVD)') {
+      when {
+        expression { false }
+      }
+      steps {
+        container('dependency-check') {
+          dir("${APP_DIR}") {
+            sh '''
+              /usr/share/dependency-check/bin/dependency-check.sh \
+                --scan . \
+                --project team-b-ai-bankapp \
+                --data /dependency-check-data \
+                --suppression suppression.xml \
+                --out reports \
+                --format HTML \
+                --format JSON \
+                --failOnCVSS 7
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Maven Package (Tests Skipped)') {
+      steps {
+        container('maven') {
+          dir("${APP_DIR}") {
+            sh './mvnw clean package -DskipTests -B'
+          }
+        }
+      }
+    }
+
+    stage('Build Scan Image') {
+      steps {
+        container('docker-cli') {
+          dir("${APP_DIR}") {
+            sh '''
+              docker buildx create \
+                --name "team-b-bankapp-${BUILD_NUMBER}" \
+                --driver remote \
+                tcp://buildkitd.jenkins.svc.cluster.local:1234 \
+                --use --bootstrap
+              docker buildx build \
+                --platform linux/amd64 \
+                --output type=oci,dest=bankapp-image.tar \
+                .
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Trivy') {
+      steps {
+        container('trivy') {
+          dir("${APP_DIR}") {
+            sh '''
+              trivy image \
+                --input bankapp-image.tar \
+                --severity HIGH,CRITICAL \
+                --ignore-unfixed \
+                --exit-code 1 \
+                --format json \
+                --output trivy-report.json
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Push to Docker Hub') {
+      steps {
+        container('docker-cli') {
+          dir("${APP_DIR}") {
+            sh '''
+              set +x
+              DOCKER_USER="$(cat /vault/secrets/dockerhub-username)"
+              DOCKER_TOKEN="$(cat /vault/secrets/dockerhub-token)"
+              printf '%s' "$DOCKER_TOKEN" |
+                docker login --username "$DOCKER_USER" --password-stdin
+              docker buildx build \
+                --platform linux/amd64,linux/arm64 \
+                --push \
+                -t "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" \
+                -t "${REGISTRY}/${IMAGE_NAME}:team-b-latest" \
+                .
+              docker logout
+              unset DOCKER_TOKEN
+              docker buildx rm "team-b-bankapp-${BUILD_NUMBER}" || true
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Trigger CD') {
+      steps {
+        build job: 'team-b/ai-bankapp/cd',
+          parameters: [string(name: 'IMAGE_TAG', value: "${IMAGE_TAG}")],
+          wait: false
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: '10-ai-bankapp/AI-BankApp-DevOps/gitleaks-report.json,10-ai-bankapp/AI-BankApp-DevOps/semgrep-report.json,10-ai-bankapp/AI-BankApp-DevOps/trivy-report.json,10-ai-bankapp/AI-BankApp-DevOps/reports/**,10-ai-bankapp/AI-BankApp-DevOps/target/*.jar',
+        allowEmptyArchive: true
+    }
+    success {
+      echo "Image published: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+    }
+  }
+}

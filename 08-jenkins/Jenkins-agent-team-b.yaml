@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    vault.hashicorp.com/agent-inject: "true"
+    vault.hashicorp.com/agent-pre-populate-only: "true"
+    vault.hashicorp.com/role: "jenkins-ci-team-b"
+    vault.hashicorp.com/agent-inject-secret-dockerhub-username: "secret/data/team-b/jenkins/ci"
+    vault.hashicorp.com/agent-inject-template-dockerhub-username: |
+      {{- with secret "secret/data/team-b/jenkins/ci" -}}
+      {{ .Data.data.dockerhub_username }}
+      {{- end }}
+    vault.hashicorp.com/agent-inject-secret-dockerhub-token: "secret/data/team-b/jenkins/ci"
+    vault.hashicorp.com/agent-inject-template-dockerhub-token: |
+      {{- with secret "secret/data/team-b/jenkins/ci" -}}
+      {{ .Data.data.dockerhub_token }}
+      {{- end }}
+spec:
+  serviceAccountName: jenkins-ci-team-b
+
+  volumes:
+    - name: workspace-volume
+      emptyDir: {}
+    - name: buildkit-certs
+      secret:
+        secretName: buildkit-client-certs
+    - name: dependency-check-data
+      persistentVolumeClaim:
+        claimName: dependency-check-data
+
+  containers:
+    - name: jnlp
+      image: jenkins/inbound-agent
+      args:
+        - "$(JENKINS_SECRET)"
+        - "$(JENKINS_NAME)"
+      volumeMounts:
+        - name: workspace-volume
+          mountPath: /home/jenkins/agent
+
+    - name: maven
+      image: maven:3.9.11-eclipse-temurin-21-alpine
+      command: ["cat"]
+      tty: true
+      volumeMounts:
+        - name: workspace-volume
+          mountPath: /home/jenkins/agent
+
+    - name: gitleaks
+      image: zricethezav/gitleaks:latest
+      command: ["cat"]
+      tty: true
+      volumeMounts:
+        - name: workspace-volume
+          mountPath: /home/jenkins/agent
+
+    - name: semgrep
+      image: semgrep/semgrep:latest
+      command: ["cat"]
+      tty: true
+      volumeMounts:
+        - name: workspace-volume
+          mountPath: /home/jenkins/agent
+
+    - name: dependency-check
+      image: owasp/dependency-check:latest
+      command: ["cat"]
+      tty: true
+      volumeMounts:
+        - name: workspace-volume
+          mountPath: /home/jenkins/agent
+        - name: dependency-check-data
+          mountPath: /dependency-check-data
+
+    - name: docker-cli
+      image: waynewu411/docker-cli:1.0
+      command: ["cat"]
+      tty: true
+      volumeMounts:
+        - name: workspace-volume
+          mountPath: /home/jenkins/agent
+        - name: buildkit-certs
+          mountPath: /certs
+          readOnly: true
+
+    - name: trivy
+      image: aquasec/trivy:latest
+      command: ["cat"]
+      tty: true
+      volumeMounts:
+        - name: workspace-volume
+          mountPath: /home/jenkins/agent

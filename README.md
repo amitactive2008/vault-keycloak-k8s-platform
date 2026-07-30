@@ -19,7 +19,7 @@ A complete local platform running on a [kind](https://kind.sigs.k8s.io/) cluster
 | **kubectl SSO** | kube-apiserver OIDC → Keycloak; per-team RBAC |
 | **Operations** | Prometheus/Grafana monitoring + Jenkins/SonarQube CI/CD |
 | **CI/CD secrets** | Vault Agent injection for Docker Hub, NVD, and target-cluster kubeconfig |
-| **Sample apps** | Team A workloads with Vault Agent secret injection |
+| **Sample apps** | Team A React/Node.js and Team B Spring Boot/Ollama workloads |
 
 ---
 
@@ -85,6 +85,7 @@ dependencies required by the application. See modules
 | `vault.kind.local` | Vault UI + API | HTTPS |
 | `keycloak.kind.local` | Keycloak Admin + OIDC | HTTPS |
 | `team-a-webapp.kind.local` | Sample 2-tier webapp | HTTPS |
+| `ai-bankapp.kind.local` | Team B Spring Boot + Ollama banking demo | HTTPS |
 
 ---
 
@@ -137,6 +138,7 @@ editing. See [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow and
 | 07 | [Monitoring](07-monitoring/README.md) | Prometheus, Grafana, Alertmanager, blackbox exporter | Optional |
 | 08 | [Jenkins and SonarQube](08-jenkins/README.md) | Vault-backed CI/CD, code quality, JCasC, and team jobs | Optional |
 | 09 | [Team A React + Node.js app](09-sample-app-react-and-nodejs/README.md) | Jenkins pipelines and canonical Gateway API deployment manifests | Optional |
+| 10 | [Team B AI BankApp](10-ai-bankapp/AI-BankApp-DevOps/README.md) | Spring Boot, MySQL, Ollama, Vault, and Jenkins CI/CD | Optional |
 | 11 | [Argo CD](11-argocd/README.md) | GitOps layer | Planned |
 | 12 | [Velero backup](12-valero-backup/README.md) | Backup and restore | Planned |
 | 13 | [Istio](13-istio/README.md) | Service mesh experiments | Planned |
@@ -328,6 +330,7 @@ After the core setup, continue with the module-specific guides:
 - [07 — Monitoring](07-monitoring/README.md)
 - [08 — Jenkins and SonarQube](08-jenkins/README.md)
 - [09 — Team A React + Node.js application](09-sample-app-react-and-nodejs/README.md)
+- [10 — Team B AI BankApp](10-ai-bankapp/AI-BankApp-DevOps/README.md)
 
 Modules 11–13 are documented placeholders and are not yet deployable.
 

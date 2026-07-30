@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-bankapp
+  namespace: team-b
+spec:
+  selector:
+    app.kubernetes.io/name: ai-bankapp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-bankapp
+  namespace: team-b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-bankapp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-bankapp
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-pre-populate-only: "true"
+        vault.hashicorp.com/role: "team-b-ai-bankapp"
+        vault.hashicorp.com/agent-inject-secret-application.env: "secret/data/team-b/ai-bankapp"
+        vault.hashicorp.com/agent-inject-template-application.env: |
+          {{- with secret "secret/data/team-b/ai-bankapp" -}}
+          export MYSQL_HOST="ai-bankapp-mysql"
+          export MYSQL_PORT="3306"
+          export MYSQL_DATABASE="{{ .Data.data.DB_NAME }}"
+          export MYSQL_USER="{{ .Data.data.DB_USER }}"
+          export MYSQL_PASSWORD="{{ .Data.data.DB_PASSWORD }}"
+          export OLLAMA_URL="http://ai-bankapp-ollama:11434"
+          {{- end }}
+    spec:
+      serviceAccountName: ai-bankapp
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: bankapp
+          image: amitactive2008/ai-bankapp:team-b-latest
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - . /vault/secrets/application.env && exec java -jar app.jar
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

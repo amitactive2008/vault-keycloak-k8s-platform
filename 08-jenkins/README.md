@@ -153,13 +153,9 @@ Jenkins
 │           ├── ci
 │           └── cd
 └── team-b/
-    └── sample-react-app/
-        ├── api/
-        │   ├── ci
-        │   └── cd
-        └── client/
-            ├── ci
-            └── cd
+    └── ai-bankapp/
+        ├── ci
+        └── cd
 ```
 
 ---
@@ -253,7 +249,7 @@ The script is **idempotent** — safe to re-run. It:
 2. Creates Keycloak OIDC clients (`jenkins`, `sonarqube`) with groups mapper
 3. Copies cert-manager CA cert to `sonarqube` namespace for HTTPS trust
 4. Applies namespace/RBAC/buildkitd manifests from `setup/`
-5. Applies the isolated `jenkins-ci` and `jenkins-cd-external` ServiceAccounts
+5. Applies the isolated shared, external-CD, and Team B CI/CD ServiceAccounts
 6. Helm install/upgrade SonarQube `2026.3.1`
 7. Helm install/upgrade Jenkins `5.9.40`
 8. Applies HTTPRoutes
@@ -279,6 +275,7 @@ The script is idempotent and does not write runtime secrets. It creates:
 |---|---|---|
 | `jenkins-ci` | `jenkins/jenkins-ci` | `secret/data/devops/jenkins/ci` |
 | `jenkins-cd-external` | `jenkins/jenkins-cd-external` | `secret/data/devops/jenkins/clusters/external` |
+| `jenkins-ci-team-b` | `jenkins/jenkins-ci-team-b` | `secret/data/team-b/jenkins/ci` |
 
 ### Step 5 — Store the runtime values in Vault
 
@@ -289,6 +286,7 @@ secrets under the `secret` mount:
 |---|---|
 | `devops/jenkins/ci` | `dockerhub_username`, `dockerhub_token`, `nvd_api_key` |
 | `devops/jenkins/clusters/external` | `kubeconfig` containing the raw, multiline YAML |
+| `team-b/jenkins/ci` | `dockerhub_username`, `dockerhub_token` |
 
 Do not base64-encode the kubeconfig. Do not commit or paste any value into a
 README, issue, job parameter, or build log.
@@ -325,7 +323,7 @@ Job files live in `08-jenkins/jobs/` — one file per team:
 jobs/
 ├── jenkins-jobs-devops.yaml   ← devops folder tree (k8s, vault, keycloak…)
 ├── jenkins-jobs-team-a.yaml   ← team-a: sample-react-app api+client ci/cd
-└── jenkins-jobs-team-b.yaml   ← team-b: sample-react-app api+client ci/cd
+└── jenkins-jobs-team-b.yaml   ← team-b: AI BankApp ci/cd
 ```
 
 ### Updating jobs — step by step
@@ -425,6 +423,9 @@ jenkins-ci pod
 
 jenkins-cd-external pod
 └── /vault/secrets/kubeconfig
+
+jenkins-ci-team-b pod
+└── /vault/secrets/{dockerhub-username,dockerhub-token}
 ```
 
 The CI and CD roles cannot read each other's paths. `agent-pre-populate-only`
@@ -514,7 +515,7 @@ curl -su admin:Admin@Jenkins2024! \
 
 # Vault-backed agent identities
 kubectl get serviceaccount -n jenkins \
-  jenkins-ci jenkins-cd-external
+  jenkins-ci jenkins-cd-external jenkins-ci-team-b jenkins-cd-team-b
 
 # Only the SonarQube integration remains in Jenkins credentials
 kubectl exec -n jenkins jenkins-0 -c jenkins -- \

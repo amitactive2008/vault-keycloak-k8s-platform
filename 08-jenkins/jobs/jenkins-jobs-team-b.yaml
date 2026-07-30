@@ -1,18 +1,8 @@
-# jenkins-jobs-team-b.yaml — Team B folder tree and pipeline jobs
+# Team B AI BankApp folder and pipeline jobs.
 #
-# Contains:
-#   Folders:  team-b / team-b/sample-react-app / .../api / .../client
-#   Jobs:     team-b/sample-react-app/api/ci
-#             team-b/sample-react-app/api/cd
-#             team-b/sample-react-app/client/ci
-#             team-b/sample-react-app/client/cd
-#
-# Source repo: https://github.com/amitactive2008/DevSecOps-Mega-Project
-# Namespace:   team-b
-# Vault path:  secret/data/team-b/sample-react-app/{api,client}
-#
-# Apply: kubectl apply -f 08-jenkins/jobs/jenkins-jobs-team-b.yaml
-# OR:    cd 08-jenkins && ./reload-jobs.sh
+# Apply with:
+#   cd 08-jenkins
+#   ./reload-jobs.sh jobs/jenkins-jobs-team-b.yaml
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -29,101 +19,54 @@ data:
     jobs:
       - script: |
 
-          // ── Team B folder tree ───────────────────────────────────────
           folder('team-b') {
             displayName('Team B')
             description('Team B pipelines — accessible by team-b and devops groups')
           }
-          folder('team-b/sample-react-app') {
-            displayName('Sample React App')
-            description('Same stack as team-a; deployed to team-b namespace. Source: amitactive2008/DevSecOps-Mega-Project. Vault: team-b/sample-react-app/*')
-          }
-          folder('team-b/sample-react-app/api') {
-            displayName('API (Node.js)')
-            description('Node.js Express API — team-b namespace')
-          }
-          folder('team-b/sample-react-app/client') {
-            displayName('Client (React)')
-            description('React SPA via Nginx — team-b namespace')
+          folder('team-b/ai-bankapp') {
+            displayName('AI BankApp')
+            description('Spring Boot, MySQL, and Ollama application deployed to the team-b namespace')
           }
 
-          // ── team-b/sample-react-app/api/ci ─────────────────────────
-          pipelineJob('team-b/sample-react-app/api/ci') {
+          pipelineJob('team-b/ai-bankapp/ci') {
             displayName('CI')
-            description('API CI: Checkout→Install→Gitleaks→SCA→SAST→QGate→Docker→Trivy→TriggerCD. Image: amitactive2008/sample-react-app-api:team-b-<build>')
+            description('Gitleaks → Checkstyle → Semgrep → Maven package → image build → Trivy → Docker Hub → CD')
             logRotator { numToKeep(10) }
             definition {
               cpsScm {
                 scm {
                   git {
-                    remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
-                    branches('*/main', '*/dev')
+                    remote {
+                      url('https://github.com/amitactive2008/vault-keycloak-k8s-platform.git')
+                    }
+                    branches('*/v5-codeX-gwApi-jenkins-reactApp')
                   }
                 }
-                scriptPath('api/Jenkinsfile')
+                scriptPath('10-ai-bankapp/AI-BankApp-DevOps/Jenkinsfile')
                 lightweight(true)
               }
             }
           }
 
-          // ── team-b/sample-react-app/api/cd ─────────────────────────
-          pipelineJob('team-b/sample-react-app/api/cd') {
+          pipelineJob('team-b/ai-bankapp/cd') {
             displayName('CD')
-            description('API CD: deploys amitactive2008/sample-react-app-api:<IMAGE_TAG> to team-b namespace. Triggered by CI or manual run.')
+            description('Deploys an immutable AI BankApp image to the local team-b namespace and runs smoke/DAST checks')
             parameters {
-              stringParam('IMAGE_TAG', 'latest', 'Docker image tag to deploy (CI build number)')
+              stringParam('IMAGE_TAG', 'team-b-latest',
+                          'Docker image tag produced by Team B CI')
             }
             logRotator { numToKeep(20) }
             definition {
               cpsScm {
                 scm {
                   git {
-                    remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
-                    branches('*/main')
+                    remote {
+                      url('https://github.com/amitactive2008/vault-keycloak-k8s-platform.git')
+                    }
+                    branches('*/v5-codeX-gwApi-jenkins-reactApp')
                   }
                 }
-                scriptPath('jenkins/Jenkinsfile-cd-local')
-                lightweight(true)
-              }
-            }
-          }
-
-          // ── team-b/sample-react-app/client/ci ──────────────────────
-          pipelineJob('team-b/sample-react-app/client/ci') {
-            displayName('CI')
-            description('Client CI: Checkout→Install→Gitleaks→Tests→SCA→SAST→QGate→Docker→Trivy→TriggerCD. Image: amitactive2008/sample-react-app-client:team-b-<build>')
-            logRotator { numToKeep(10) }
-            definition {
-              cpsScm {
-                scm {
-                  git {
-                    remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
-                    branches('*/main', '*/dev')
-                  }
-                }
-                scriptPath('client/Jenkinsfile')
-                lightweight(true)
-              }
-            }
-          }
-
-          // ── team-b/sample-react-app/client/cd ──────────────────────
-          pipelineJob('team-b/sample-react-app/client/cd') {
-            displayName('CD')
-            description('Client CD: deploys amitactive2008/sample-react-app-client:<IMAGE_TAG> to team-b namespace. Triggered by CI or manual run.')
-            parameters {
-              stringParam('IMAGE_TAG', 'latest', 'Docker image tag to deploy (CI build number)')
-            }
-            logRotator { numToKeep(20) }
-            definition {
-              cpsScm {
-                scm {
-                  git {
-                    remote { url('https://github.com/amitactive2008/DevSecOps-Mega-Project.git') }
-                    branches('*/main')
-                  }
-                }
-                scriptPath('jenkins/Jenkinsfile-cd-local')
+                scriptPath('10-ai-bankapp/AI-BankApp-DevOps/cd/Jenkinsfile')
                 lightweight(true)
               }
             }

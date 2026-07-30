@@ -1,0 +1,39 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ai-bankapp
+  namespace: team-b
+spec:
+  parentRefs:
+    - name: native-gateway
+      namespace: default
+      sectionName: https
+  hostnames:
+    - "ai-bankapp.kind.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: ai-bankapp
+          port: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ai-bankapp-http-redirect
+  namespace: team-b
+spec:
+  parentRefs:
+    - name: native-gateway
+      namespace: default
+      sectionName: http
+  hostnames:
+    - "ai-bankapp.kind.local"
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

@@ -307,6 +307,7 @@ kubectl create namespace "$JENKINS_NS" --dry-run=client -o yaml | kubectl apply 
 kubectl apply -k "${SCRIPT_DIR}/setup" 2>&1 || {
   warn "kustomize apply had warnings (non-fatal)"
 }
+kubectl apply -f "${SCRIPT_DIR}/setup/team-b-rbac.yaml"
 info "Base manifests applied ✓"
 
 # ── Step 5: Vault-backed Jenkins identities ───────────────────────────────────
@@ -314,6 +315,8 @@ section "Step 5 — Checking Vault-backed Jenkins agent identities"
 
 kubectl get serviceaccount jenkins-ci -n "$JENKINS_NS" >/dev/null
 kubectl get serviceaccount jenkins-cd-external -n "$JENKINS_NS" >/dev/null
+kubectl get serviceaccount jenkins-ci-team-b -n "$JENKINS_NS" >/dev/null
+kubectl get serviceaccount jenkins-cd-team-b -n "$JENKINS_NS" >/dev/null
 info "Jenkins CI/CD ServiceAccounts are ready ✓"
 info "Run ./vault-setup.sh and seed the documented Vault KV paths before builds."
 

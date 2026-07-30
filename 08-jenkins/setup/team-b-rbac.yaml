@@ -1,0 +1,49 @@
+# Kept outside setup/kustomization.yaml because these resources belong to
+# team-b rather than the Jenkins namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-b
+---
+# Team B CD is intentionally namespace-scoped. The agent can reconcile and
+# verify AI BankApp resources, but cannot create namespaces or modify Team A.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkins-ai-bankapp-deployer
+  namespace: team-b
+rules:
+  - apiGroups: [""]
+    resources:
+      - configmaps
+      - endpoints
+      - persistentvolumeclaims
+      - serviceaccounts
+      - services
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-ai-bankapp-deployer
+  namespace: team-b
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: jenkins-ai-bankapp-deployer
+subjects:
+  - kind: ServiceAccount
+    name: jenkins-cd-team-b
+    namespace: jenkins

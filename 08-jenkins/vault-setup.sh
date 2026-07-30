@@ -35,6 +35,7 @@ kubectl get namespace "$VAULT_NAMESPACE" >/dev/null
 kubectl get namespace "$JENKINS_NAMESPACE" >/dev/null
 kubectl get serviceaccount jenkins-ci -n "$JENKINS_NAMESPACE" >/dev/null
 kubectl get serviceaccount jenkins-cd-external -n "$JENKINS_NAMESPACE" >/dev/null
+kubectl get serviceaccount jenkins-ci-team-b -n "$JENKINS_NAMESPACE" >/dev/null
 
 if ! vault_exec auth list -format=json | grep -q '"kubernetes/"'; then
   vault_exec auth enable kubernetes
@@ -64,6 +65,8 @@ write_policy "jenkins-ci" \
   "${SCRIPT_DIR}/vault/policies/jenkins-ci.hcl"
 write_policy "jenkins-cd-external" \
   "${SCRIPT_DIR}/vault/policies/jenkins-cd-external.hcl"
+write_policy "jenkins-ci-team-b" \
+  "${SCRIPT_DIR}/vault/policies/jenkins-ci-team-b.hcl"
 
 vault_exec write auth/kubernetes/role/jenkins-ci \
   bound_service_account_names="jenkins-ci" \
@@ -77,11 +80,19 @@ vault_exec write auth/kubernetes/role/jenkins-cd-external \
   policies="jenkins-cd-external" \
   ttl="30m"
 
+vault_exec write auth/kubernetes/role/jenkins-ci-team-b \
+  bound_service_account_names="jenkins-ci-team-b" \
+  bound_service_account_namespaces="$JENKINS_NAMESPACE" \
+  policies="jenkins-ci-team-b" \
+  ttl="30m"
+
 echo
 echo "Vault policies and Kubernetes-auth roles configured."
 echo "Seed these KV v2 paths before starting Jenkins jobs:"
 echo "  secret/devops/jenkins/ci"
 echo "  secret/devops/jenkins/clusters/external"
+echo "  secret/team-b/jenkins/ci"
 echo
 echo "Required CI keys: dockerhub_username, dockerhub_token, nvd_api_key"
 echo "Required CD key:  kubeconfig"
+echo "Required Team B CI keys: dockerhub_username, dockerhub_token"
