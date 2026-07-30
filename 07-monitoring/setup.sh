@@ -408,6 +408,55 @@ TEAM_B_ORG_ID=$(grafana_api GET "/api/orgs/name/team-b" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 info "Org IDs: admin=${ADMIN_ORG_ID}  team-a=${TEAM_A_ORG_ID}  team-b=${TEAM_B_ORG_ID}"
 
+# Grafana 13.1.1 documents organization names in org_mapping, but its running
+# Generic OAuth mapper attempts to parse the destination as an integer. Build
+# the mapping from the IDs discovered above and persist it with Grafana's SSO
+# Settings API. Database-backed settings override grafana.ini and apply without
+# a pod restart.
+info "Configuring ID-based Generic OAuth organization mapping..."
+SSO_CURRENT=$(grafana_api GET "/api/v1/sso-settings/generic_oauth")
+SSO_PAYLOAD=$(
+  SSO_CURRENT="${SSO_CURRENT}" \
+  ADMIN_ORG_ID="${ADMIN_ORG_ID}" \
+  TEAM_A_ORG_ID="${TEAM_A_ORG_ID}" \
+  TEAM_B_ORG_ID="${TEAM_B_ORG_ID}" \
+  GRAFANA_OIDC_CLIENT_SECRET="${GRAFANA_OIDC_CLIENT_SECRET}" \
+  python3 <<'PYSSO'
+import json
+import os
+
+document = json.loads(os.environ["SSO_CURRENT"])
+settings = document["settings"]
+settings["clientSecret"] = os.environ["GRAFANA_OIDC_CLIENT_SECRET"]
+settings["groupsAttributePath"] = "groups"
+settings["orgAttributePath"] = "groups"
+settings["roleAttributePath"] = "contains(groups[*], 'devops') && 'Admin' || 'None'"
+settings["orgMapping"] = " ".join([
+    f"devops:{os.environ['ADMIN_ORG_ID']}:Admin",
+    f"devops:{os.environ['TEAM_A_ORG_ID']}:Admin",
+    f"devops:{os.environ['TEAM_B_ORG_ID']}:Admin",
+    f"team-a:{os.environ['TEAM_A_ORG_ID']}:Admin",
+    f"team-b:{os.environ['TEAM_B_ORG_ID']}:Admin",
+])
+print(json.dumps({"settings": settings}, separators=(",", ":")))
+PYSSO
+)
+grafana_api PUT "/api/v1/sso-settings/generic_oauth" \
+  -d "${SSO_PAYLOAD}" > /dev/null
+
+SSO_EFFECTIVE=$(grafana_api GET "/api/v1/sso-settings/generic_oauth")
+SSO_EFFECTIVE="${SSO_EFFECTIVE}" python3 <<'PYSSO'
+import json
+import os
+
+settings = json.loads(os.environ["SSO_EFFECTIVE"])["settings"]
+if settings.get("orgAttributePath") != "groups":
+    raise SystemExit("Grafana orgAttributePath was not applied")
+if any(name in settings.get("orgMapping", "") for name in (":admin:", ":team-a:", ":team-b:")):
+    raise SystemExit("Grafana orgMapping still contains destination names")
+print("Generic OAuth organization mapping applied:", settings["orgMapping"])
+PYSSO
+
 # ── 4b: Datasources — Prometheus in each org ─────────────────────────────────
 PROM_URL="http://prometheus-operated.${MONITORING_NS}:9090"
 
@@ -437,9 +486,6 @@ info "Adding Prometheus datasources..."
 add_datasource_if_missing "${ADMIN_ORG_ID}" "Prometheus"
 add_datasource_if_missing "${TEAM_A_ORG_ID}" "Prometheus"
 add_datasource_if_missing "${TEAM_B_ORG_ID}" "Prometheus"
-
-# Switch back to admin org
-grafana_switch_org "${ADMIN_ORG_ID}"
 
 # ── 4c: Namespace dashboards for team-a and team-b ───────────────────────────
 # Each team gets a dashboard pre-filtered to their namespace showing:
@@ -576,7 +622,7 @@ payload = json.dumps({
 # Use X-Grafana-Org-Id header — per-request only, does NOT change the admin
 # user's session org (safe to use while sidecar is running in background)
 result = subprocess.run(
-    ["curl", "-sf", "-X", "POST",
+    ["curl", "--fail-with-body", "-sS", "-X", "POST",
      "-u", f"{grafana_user}:{grafana_pass}",
      "-H", "Content-Type: application/json",
      "-H", f"X-Grafana-Org-Id: {org_id}",
@@ -587,15 +633,21 @@ result = subprocess.run(
 if result.returncode == 0 and '"status":"success"' in result.stdout:
     print(f"Dashboard imported into org {org_id}: {result.stdout[:120]}")
 else:
-    print(f"WARNING: dashboard import result: {result.stdout[:120]} | err: {result.stderr[:80]}", file=sys.stderr)
+    print(f"Dashboard import failed: {result.stdout[:500]} | err: {result.stderr[:200]}", file=sys.stderr)
+    raise SystemExit(1)
 PYEOF
+
+  grafana_api_org "${org_id}" GET \
+    "/api/dashboards/uid/ns-overview-${namespace}" > /dev/null
+  info "Dashboard verified in org ${org_id}: ns-overview-${namespace}"
 }
 
 import_namespace_dashboard "${TEAM_A_ORG_ID}" "team-a" "Team A"
 import_namespace_dashboard "${TEAM_B_ORG_ID}" "team-b" "Team B"
 
 # Stop port-forward
-kill $PF_PID 2>/dev/null; wait $PF_PID 2>/dev/null; true
+kill "$PF_PID" 2>/dev/null || true
+wait "$PF_PID" 2>/dev/null || true
 trap - EXIT
 info "Port-forward stopped"
 
