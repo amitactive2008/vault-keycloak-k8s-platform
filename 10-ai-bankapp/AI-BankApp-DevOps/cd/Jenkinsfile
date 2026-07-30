@@ -104,6 +104,8 @@ pipeline {
                 -r zap-report.html \
                 -J zap-report.json \
                 -I
+              cp /zap/wrk/zap-report.html "$WORKSPACE/zap-report.html"
+              cp /zap/wrk/zap-report.json "$WORKSPACE/zap-report.json"
             '''
           }
         }
