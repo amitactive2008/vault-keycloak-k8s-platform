@@ -90,7 +90,7 @@ pipeline {
                 --use --bootstrap
               docker buildx build \
                 --platform linux/amd64 \
-                --output type=docker,dest=bankapp-image.tar \
+                --output "type=docker,dest=${WORKSPACE}/bankapp-image.tar" \
                 .
             '''
           }
@@ -101,17 +101,15 @@ pipeline {
     stage('Trivy') {
       steps {
         container('trivy') {
-          dir("${APP_DIR}") {
-            sh '''
+          sh '''
               trivy image \
-                --input bankapp-image.tar \
+                --input "${WORKSPACE}/bankapp-image.tar" \
                 --severity HIGH,CRITICAL \
                 --ignore-unfixed \
                 --exit-code 1 \
                 --format json \
-                --output trivy-report.json
+                --output "${WORKSPACE}/${APP_DIR}/trivy-report.json"
             '''
-          }
         }
       }
     }
