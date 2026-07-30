@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ai-bankapp.fullname" . }}-mysql
+  labels:
+    {{- include "ai-bankapp.componentLabels" (dict "root" . "component" "mysql") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "ai-bankapp.componentSelectorLabels" (dict "root" . "component" "mysql") | nindent 4 }}
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ai-bankapp.fullname" . }}-mysql
+  labels:
+    {{- include "ai-bankapp.componentLabels" (dict "root" . "component" "mysql") | nindent 4 }}
+spec:
+  serviceName: {{ include "ai-bankapp.fullname" . }}-mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ai-bankapp.componentSelectorLabels" (dict "root" . "component" "mysql") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-bankapp.componentSelectorLabels" (dict "root" . "component" "mysql") | nindent 8 }}
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-pre-populate-only: "true"
+        vault.hashicorp.com/role: {{ .Values.vault.role | quote }}
+        vault.hashicorp.com/agent-inject-secret-mysql.env: {{ .Values.vault.secretPath | quote }}
+        vault.hashicorp.com/agent-inject-template-mysql.env: |
+          {{`{{- with secret "`}}{{ .Values.vault.secretPath }}{{`" -}}`}}
+          export MYSQL_ROOT_PASSWORD="{{`{{ .Data.data.DB_ROOT_PASSWORD }}`}}"
+          export MYSQL_DATABASE="{{`{{ .Data.data.DB_NAME }}`}}"
+          export MYSQL_USER="{{`{{ .Data.data.DB_USER }}`}}"
+          export MYSQL_PASSWORD="{{`{{ .Data.data.DB_PASSWORD }}`}}"
+          {{`{{- end }}`}}
+    spec:
+      serviceAccountName: {{ include "ai-bankapp.serviceAccountName" . }}
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: mysql
+          image: "{{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}"
+          imagePullPolicy: {{ .Values.mysql.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          command: ["/bin/bash", "-c"]
+          args:
+            - source /vault/secrets/mysql.env && exec docker-entrypoint.sh mysqld
+          ports:
+            - name: mysql
+              containerPort: 3306
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "127.0.0.1"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "127.0.0.1"]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.mysql.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.mysql.persistence.size }}

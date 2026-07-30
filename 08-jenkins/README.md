@@ -427,6 +427,11 @@ jenkins-cd-external pod
 
 jenkins-ci-team-b pod
 └── /vault/secrets/{dockerhub-username,dockerhub-token}
+
+The Team B CI pod uses those credentials for both the application image and
+the `ai-bankapp-chart` OCI artifact. Its CD pod pulls the public chart with
+Helm and remains namespace-scoped; Kubernetes Secret access is limited to
+`team-b` and is required for Helm release metadata.
 ```
 
 The CI and CD roles cannot read each other's paths. `agent-pre-populate-only`

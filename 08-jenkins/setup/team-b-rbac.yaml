@@ -18,6 +18,7 @@ rules:
       - configmaps
       - endpoints
       - persistentvolumeclaims
+      - secrets
       - serviceaccounts
       - services
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

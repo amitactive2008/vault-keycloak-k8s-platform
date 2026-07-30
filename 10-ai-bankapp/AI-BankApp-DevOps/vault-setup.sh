@@ -48,7 +48,6 @@ random_value() {
 kubectl get namespace "$VAULT_NAMESPACE" >/dev/null
 kubectl create namespace "$APP_NAMESPACE" --dry-run=client -o yaml |
   kubectl apply -f -
-kubectl apply -f "${SCRIPT_DIR}/kubernetes/serviceaccount.yaml"
 
 if ! vault_exec auth list -format=json | grep -q '"kubernetes/"'; then
   vault_exec auth enable kubernetes

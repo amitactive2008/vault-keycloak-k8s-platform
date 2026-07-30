@@ -1,9 +1,10 @@
 # 10 — Team B AI BankApp
 
 This module packages the imported Spring Boot banking demo for the local kind
-platform. Jenkins builds and scans the application, pushes a multi-platform
-image to Docker Hub, and triggers a separate CD job that deploys MySQL, Ollama,
-and the application into the `team-b` namespace.
+platform. Jenkins builds and scans the application, pushes both a
+multi-platform image and an OCI Helm chart to Docker Hub, and triggers a
+separate CD job. CD pulls the immutable chart version and deploys MySQL,
+Ollama, and the application into the `team-b` namespace.
 
 This is a study application, not a real banking system.
 
@@ -17,11 +18,14 @@ team-b/ai-bankapp/ci
   ├── Maven package (tests skipped)
   ├── BuildKit OCI image build
   ├── Trivy
-  └── Docker Hub push
+  ├── Docker Hub image push
+  └── Helm lint, package, and OCI push
             │
             ▼
 team-b/ai-bankapp/cd
   ├── namespace-scoped Kubernetes preflight
+  ├── pull immutable chart from Docker Hub
+  ├── Helm upgrade/install with matching image tag
   ├── MySQL + Ollama + application rollout
   ├── actuator smoke test
   └── OWASP ZAP baseline scan (audit)
@@ -61,7 +65,8 @@ local-platform behavior was implemented in the Jenkins pipelines.
 | Container build | Remote BuildKit |
 | Trivy | Blocks on fixed High/Critical findings before push |
 | Registry push | Docker Hub immutable and `team-b-latest` tags |
-| Deployment | Namespace-scoped Kubernetes CD |
+| Chart publish | OCI chart `ai-bankapp-chart:0.1.<BUILD_NUMBER>` on Docker Hub |
+| Deployment | Pull exact OCI chart version and run namespace-scoped Helm upgrade |
 | OWASP ZAP | Audit-only scan after rollout |
 
 The Maven baseline uses Spring Boot `3.5.14`, Tomcat `10.1.55`, Thymeleaf
@@ -103,8 +108,16 @@ The kind nodes need enough free resources for Jenkins build agents, MySQL, and
 Ollama. The first TinyLlama pull can take several minutes and is retained on a
 3 Gi persistent volume.
 
-The Docker Hub repository `amitactive2008/ai-bankapp` must exist and allow the
-Vault-stored Docker Hub account to push.
+The Vault-stored account must be allowed to push under `amitactive2008`:
+
+- `amitactive2008/ai-bankapp` stores application images;
+- `amitactive2008/ai-bankapp-chart` stores OCI Helm charts and is created
+  automatically by the first successful chart push.
+
+Keep both repositories public for this study flow. Kubernetes pulls the
+application image and the CD Helm client pulls the chart anonymously. A private
+registry requires separate pull-only credentials; do not reuse a broad
+push-capable token in the CD pod.
 
 ## Setup
 
@@ -156,8 +169,17 @@ team-b/ai-bankapp/ci
 team-b/ai-bankapp/cd
 ```
 
-Run CI. A successful immutable image push automatically starts CD with tag
-`team-b-<BUILD_NUMBER>`. Manual CD runs default to `team-b-latest`.
+Run CI. One successful build publishes the immutable pair below and then starts
+CD with both values:
+
+```text
+amitactive2008/ai-bankapp:team-b-<BUILD_NUMBER>
+oci://registry-1.docker.io/amitactive2008/ai-bankapp-chart:0.1.<BUILD_NUMBER>
+```
+
+Manual CD runs require an image tag and a chart version that already exist in
+Docker Hub. The `0.1.1` default assumes CI build 1 still exists; select the
+version printed by the CI build for later runs.
 
 ### 5. Add the local hostname
 
@@ -166,6 +188,44 @@ echo "127.0.0.1 ai-bankapp.kind.local" | sudo tee -a /etc/hosts
 ```
 
 Open `https://ai-bankapp.kind.local`.
+
+## Helm chart
+
+The reusable defaults live in `helm/ai-bankapp/values.yaml`. Local Team B
+settings—Docker Hub image, Vault path and role, Gateway parent, and hostname—
+live in `helm/team-b-values.yaml`.
+
+```text
+helm/
+├── ai-bankapp/
+│   ├── Chart.yaml
+│   ├── values.yaml
+│   └── templates/
+│       ├── application.yaml
+│       ├── httproute.yaml
+│       ├── mysql.yaml
+│       ├── ollama.yaml
+│       └── serviceaccount.yaml
+└── team-b-values.yaml
+```
+
+Validate and render it locally:
+
+```bash
+helm lint 10-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp \
+  -f 10-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml
+
+helm template ai-bankapp \
+  10-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp \
+  --namespace team-b \
+  -f 10-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml \
+  --set-string image.tag=team-b-latest
+```
+
+The first CD run uses Helm's `--take-ownership` option to adopt resources
+created by the former raw-manifest pipeline without changing their stable names
+or selectors. Later runs use `--atomic` for rollback protection. The raw
+`kubernetes/` manifests were removed so Helm is the single deployment owner.
 
 ## Kubernetes resources
 
@@ -191,6 +251,9 @@ kubectl rollout status deployment/ai-bankapp -n team-b --timeout=7m
 
 kubectl get deployment ai-bankapp -n team-b \
   -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+
+helm status ai-bankapp -n team-b
+helm get values ai-bankapp -n team-b
 
 curl --fail https://ai-bankapp.kind.local/actuator/health
 ```

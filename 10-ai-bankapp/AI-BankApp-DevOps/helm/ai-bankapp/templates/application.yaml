@@ -1,52 +1,54 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: ai-bankapp
-  namespace: team-b
+  name: {{ include "ai-bankapp.fullname" . }}
+  labels:
+    {{- include "ai-bankapp.labels" . | nindent 4 }}
 spec:
   selector:
-    app.kubernetes.io/name: ai-bankapp
+    {{- include "ai-bankapp.selectorLabels" . | nindent 4 }}
   ports:
     - name: http
-      port: 8080
+      port: {{ .Values.service.port }}
       targetPort: http
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ai-bankapp
-  namespace: team-b
+  name: {{ include "ai-bankapp.fullname" . }}
+  labels:
+    {{- include "ai-bankapp.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: ai-bankapp
+      {{- include "ai-bankapp.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: ai-bankapp
+        {{- include "ai-bankapp.selectorLabels" . | nindent 8 }}
       annotations:
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/agent-pre-populate-only: "true"
-        vault.hashicorp.com/role: "team-b-ai-bankapp"
-        vault.hashicorp.com/agent-inject-secret-application.env: "secret/data/team-b/ai-bankapp"
+        vault.hashicorp.com/role: {{ .Values.vault.role | quote }}
+        vault.hashicorp.com/agent-inject-secret-application.env: {{ .Values.vault.secretPath | quote }}
         vault.hashicorp.com/agent-inject-template-application.env: |
-          {{- with secret "secret/data/team-b/ai-bankapp" -}}
-          export MYSQL_HOST="ai-bankapp-mysql"
+          {{`{{- with secret "`}}{{ .Values.vault.secretPath }}{{`" -}}`}}
+          export MYSQL_HOST="{{ include "ai-bankapp.fullname" . }}-mysql"
           export MYSQL_PORT="3306"
-          export MYSQL_DATABASE="{{ .Data.data.DB_NAME }}"
-          export MYSQL_USER="{{ .Data.data.DB_USER }}"
-          export MYSQL_PASSWORD="{{ .Data.data.DB_PASSWORD }}"
-          export OLLAMA_URL="http://ai-bankapp-ollama:11434"
-          {{- end }}
+          export MYSQL_DATABASE="{{`{{ .Data.data.DB_NAME }}`}}"
+          export MYSQL_USER="{{`{{ .Data.data.DB_USER }}`}}"
+          export MYSQL_PASSWORD="{{`{{ .Data.data.DB_PASSWORD }}`}}"
+          export OLLAMA_URL="http://{{ include "ai-bankapp.fullname" . }}-ollama:11434"
+          {{`{{- end }}`}}
     spec:
-      serviceAccountName: ai-bankapp
+      serviceAccountName: {{ include "ai-bankapp.serviceAccountName" . }}
       securityContext:
         fsGroup: 1000
       containers:
         - name: bankapp
-          image: amitactive2008/ai-bankapp:team-b-latest
-          imagePullPolicy: Always
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -76,9 +78,4 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
           resources:
-            requests:
-              cpu: 200m
-              memory: 384Mi
-            limits:
-              cpu: "1"
-              memory: 1Gi
+            {{- toYaml .Values.app.resources | nindent 12 }}

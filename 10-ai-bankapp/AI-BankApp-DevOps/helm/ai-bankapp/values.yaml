@@ -1,0 +1,69 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: example/ai-bankapp
+  tag: team-b-latest
+  pullPolicy: Always
+
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: ""
+
+vault:
+  role: ai-bankapp
+  secretPath: secret/data/ai-bankapp
+
+service:
+  port: 8080
+
+gateway:
+  enabled: true
+  hostname: ai-bankapp.example.local
+  parent:
+    name: native-gateway
+    namespace: default
+    httpsSectionName: https
+    httpSectionName: http
+
+mysql:
+  image:
+    repository: mysql
+    tag: "8.0"
+    pullPolicy: IfNotPresent
+  persistence:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+ollama:
+  image:
+    repository: ollama/ollama
+    tag: latest
+    pullPolicy: IfNotPresent
+  model: tinyllama
+  persistence:
+    size: 3Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 3Gi
+
+app:
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi

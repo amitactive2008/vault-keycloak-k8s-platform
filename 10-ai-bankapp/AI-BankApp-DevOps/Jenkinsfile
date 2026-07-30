@@ -12,6 +12,9 @@ pipeline {
     REGISTRY   = 'amitactive2008'
     IMAGE_NAME = 'ai-bankapp'
     IMAGE_TAG  = "team-b-${BUILD_NUMBER}"
+    CHART_DIR  = 'helm/ai-bankapp'
+    CHART_NAME = 'ai-bankapp-chart'
+    CHART_VERSION = "0.1.${BUILD_NUMBER}"
   }
 
   options {
@@ -138,10 +141,43 @@ pipeline {
       }
     }
 
+    stage('Publish Helm Chart to Docker Hub') {
+      steps {
+        container('helm') {
+          dir("${APP_DIR}") {
+            sh '''
+              set -e
+              helm lint "$CHART_DIR" -f helm/team-b-values.yaml \
+                --set-string image.tag="$IMAGE_TAG"
+              mkdir -p helm/dist
+              helm package "$CHART_DIR" \
+                --version "$CHART_VERSION" \
+                --app-version "$IMAGE_TAG" \
+                --destination helm/dist
+
+              set +x
+              DOCKER_USER="$(cat /vault/secrets/dockerhub-username)"
+              DOCKER_TOKEN="$(cat /vault/secrets/dockerhub-token)"
+              printf '%s' "$DOCKER_TOKEN" |
+                helm registry login registry-1.docker.io \
+                  --username "$DOCKER_USER" --password-stdin
+              helm push "helm/dist/${CHART_NAME}-${CHART_VERSION}.tgz" \
+                "oci://registry-1.docker.io/${REGISTRY}"
+              helm registry logout registry-1.docker.io
+              unset DOCKER_TOKEN
+            '''
+          }
+        }
+      }
+    }
+
     stage('Trigger CD') {
       steps {
         build job: 'team-b/ai-bankapp/cd',
-          parameters: [string(name: 'IMAGE_TAG', value: "${IMAGE_TAG}")],
+          parameters: [
+            string(name: 'IMAGE_TAG', value: "${IMAGE_TAG}"),
+            string(name: 'CHART_VERSION', value: "${CHART_VERSION}")
+          ],
           wait: false
       }
     }
@@ -149,11 +185,12 @@ pipeline {
 
   post {
     always {
-      archiveArtifacts artifacts: '10-ai-bankapp/AI-BankApp-DevOps/gitleaks-report.json,10-ai-bankapp/AI-BankApp-DevOps/semgrep-report.json,10-ai-bankapp/AI-BankApp-DevOps/trivy-report.json,10-ai-bankapp/AI-BankApp-DevOps/target/*.jar',
+      archiveArtifacts artifacts: '10-ai-bankapp/AI-BankApp-DevOps/gitleaks-report.json,10-ai-bankapp/AI-BankApp-DevOps/semgrep-report.json,10-ai-bankapp/AI-BankApp-DevOps/trivy-report.json,10-ai-bankapp/AI-BankApp-DevOps/target/*.jar,10-ai-bankapp/AI-BankApp-DevOps/helm/dist/*.tgz',
         allowEmptyArchive: true
     }
     success {
       echo "Image published: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+      echo "Chart published: oci://registry-1.docker.io/${REGISTRY}/${CHART_NAME}:${CHART_VERSION}"
     }
   }
 }

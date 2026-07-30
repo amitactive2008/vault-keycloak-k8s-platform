@@ -1,0 +1,19 @@
+fullnameOverride: ai-bankapp
+
+image:
+  repository: amitactive2008/ai-bankapp
+
+serviceAccount:
+  name: ai-bankapp
+
+vault:
+  role: team-b-ai-bankapp
+  secretPath: secret/data/team-b/ai-bankapp
+
+gateway:
+  hostname: ai-bankapp.kind.local
+  parent:
+    name: native-gateway
+    namespace: default
+    httpsSectionName: https
+    httpSectionName: http

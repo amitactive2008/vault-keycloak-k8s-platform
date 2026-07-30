@@ -39,3 +39,18 @@ spec:
           mountPath: /home/jenkins/agent
         - name: workspace-volume
           mountPath: /zap/wrk
+
+    - name: helm
+      image: alpine/helm:3.18.4
+      imagePullPolicy: IfNotPresent
+      command: ["cat"]
+      tty: true
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+      env:
+        - name: HOME
+          value: /tmp/helm
+      volumeMounts:
+        - name: workspace-volume
+          mountPath: /home/jenkins/agent

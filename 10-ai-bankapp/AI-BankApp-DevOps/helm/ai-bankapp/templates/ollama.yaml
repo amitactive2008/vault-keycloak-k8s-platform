@@ -1,11 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: ai-bankapp-ollama
-  namespace: team-b
+  name: {{ include "ai-bankapp.fullname" . }}-ollama
+  labels:
+    {{- include "ai-bankapp.componentLabels" (dict "root" . "component" "ollama") | nindent 4 }}
 spec:
   selector:
-    app.kubernetes.io/name: ai-bankapp-ollama
+    {{- include "ai-bankapp.componentSelectorLabels" (dict "root" . "component" "ollama") | nindent 4 }}
   ports:
     - name: http
       port: 11434
@@ -14,34 +15,37 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: ai-bankapp-ollama
-  namespace: team-b
+  name: {{ include "ai-bankapp.fullname" . }}-ollama
+  labels:
+    {{- include "ai-bankapp.componentLabels" (dict "root" . "component" "ollama") | nindent 4 }}
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
     requests:
-      storage: 3Gi
+      storage: {{ .Values.ollama.persistence.size }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ai-bankapp-ollama
-  namespace: team-b
+  name: {{ include "ai-bankapp.fullname" . }}-ollama
+  labels:
+    {{- include "ai-bankapp.componentLabels" (dict "root" . "component" "ollama") | nindent 4 }}
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: ai-bankapp-ollama
+      {{- include "ai-bankapp.componentSelectorLabels" (dict "root" . "component" "ollama") | nindent 6 }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: ai-bankapp-ollama
+        {{- include "ai-bankapp.componentSelectorLabels" (dict "root" . "component" "ollama") | nindent 8 }}
     spec:
       containers:
         - name: ollama
-          image: ollama/ollama:latest
+          image: "{{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}"
+          imagePullPolicy: {{ .Values.ollama.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -63,16 +67,11 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 20
           resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
-            limits:
-              cpu: "2"
-              memory: 3Gi
+            {{- toYaml .Values.ollama.resources | nindent 12 }}
           volumeMounts:
             - name: models
               mountPath: /root/.ollama
       volumes:
         - name: models
           persistentVolumeClaim:
-            claimName: ai-bankapp-ollama
+            claimName: {{ include "ai-bankapp.fullname" . }}-ollama

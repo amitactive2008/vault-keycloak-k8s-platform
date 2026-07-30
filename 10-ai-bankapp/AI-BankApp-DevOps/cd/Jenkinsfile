@@ -9,6 +9,8 @@ pipeline {
   parameters {
     string(name: 'IMAGE_TAG', defaultValue: 'team-b-latest',
            description: 'AI BankApp image tag produced by Team B CI')
+    string(name: 'CHART_VERSION', defaultValue: '0.1.1',
+           description: 'OCI Helm chart version produced by Team B CI')
   }
 
   environment {
@@ -16,7 +18,9 @@ pipeline {
     REGISTRY    = 'amitactive2008'
     IMAGE_NAME  = 'ai-bankapp'
     DEPLOYMENT  = 'ai-bankapp'
-    MANIFESTS   = '10-ai-bankapp/AI-BankApp-DevOps/kubernetes'
+    RELEASE     = 'ai-bankapp'
+    CHART       = 'oci://registry-1.docker.io/amitactive2008/ai-bankapp-chart'
+    VALUES_FILE = '10-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml'
   }
 
   options {
@@ -33,20 +37,33 @@ pipeline {
           kubectl get --raw=/version >/dev/null
           kubectl auth can-i create deployments -n "$NAMESPACE" | grep -qx yes
           kubectl auth can-i patch statefulsets -n "$NAMESPACE" | grep -qx yes
+          kubectl auth can-i create secrets -n "$NAMESPACE" | grep -qx yes
           kubectl auth can-i create namespaces | grep -qx no
         '''
       }
     }
 
-    stage('Apply Platform Resources') {
+    stage('Pull and Deploy Helm Chart') {
       steps {
-        sh '''
-          kubectl apply -f "$MANIFESTS/serviceaccount.yaml"
-          kubectl apply -f "$MANIFESTS/mysql.yaml"
-          kubectl apply -f "$MANIFESTS/ollama.yaml"
-          kubectl apply -f "$MANIFESTS/application.yaml"
-          kubectl apply -f "$MANIFESTS/httproute.yaml"
-        '''
+        container('helm') {
+          sh '''
+            # Take ownership of the previous kubectl-managed resources only on
+            # the first Helm install. Later upgrades get atomic rollback.
+            HELM_SAFETY_ARGS="--take-ownership"
+            if helm status "$RELEASE" --namespace "$NAMESPACE" >/dev/null 2>&1; then
+              HELM_SAFETY_ARGS="--atomic"
+            fi
+            helm upgrade --install "$RELEASE" "$CHART" \
+              --version "$CHART_VERSION" \
+              --namespace "$NAMESPACE" \
+              --values "$VALUES_FILE" \
+              --set-string image.tag="$IMAGE_TAG" \
+              $HELM_SAFETY_ARGS \
+              --wait \
+              --timeout 10m \
+              --history-max 10
+          '''
+        }
       }
     }
 
@@ -64,18 +81,6 @@ pipeline {
               -- ollama pull tinyllama
           fi
         '''
-      }
-    }
-
-    stage('Deploy Immutable Image') {
-      steps {
-        sh """
-          kubectl set image deployment/${DEPLOYMENT} \
-            bankapp=${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG} \
-            -n ${NAMESPACE}
-          kubectl rollout status deployment/${DEPLOYMENT} \
-            -n ${NAMESPACE} --timeout=7m
-        """
       }
     }
 
@@ -119,7 +124,7 @@ pipeline {
                        allowEmptyArchive: true
     }
     success {
-      echo "Deployed: ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}"
+      echo "Deployed chart ${CHART}:${params.CHART_VERSION} with image ${REGISTRY}/${IMAGE_NAME}:${params.IMAGE_TAG}"
     }
     failure {
       sh '''

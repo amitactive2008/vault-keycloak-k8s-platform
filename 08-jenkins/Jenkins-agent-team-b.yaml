@@ -78,3 +78,14 @@ spec:
       volumeMounts:
         - name: workspace-volume
           mountPath: /home/jenkins/agent
+
+    - name: helm
+      image: alpine/helm:3.18.4
+      command: ["cat"]
+      tty: true
+      env:
+        - name: HOME
+          value: /tmp/helm
+      volumeMounts:
+        - name: workspace-volume
+          mountPath: /home/jenkins/agent

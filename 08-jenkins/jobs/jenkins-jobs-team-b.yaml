@@ -30,7 +30,7 @@ data:
 
           pipelineJob('team-b/ai-bankapp/ci') {
             displayName('CI')
-            description('Gitleaks → Checkstyle → Semgrep → Maven package → image build → Trivy → Docker Hub → CD')
+            description('Gitleaks → Checkstyle → Semgrep → Maven package → image build → Trivy → Docker Hub image + OCI Helm chart → CD')
             logRotator { numToKeep(10) }
             definition {
               cpsScm {
@@ -50,10 +50,12 @@ data:
 
           pipelineJob('team-b/ai-bankapp/cd') {
             displayName('CD')
-            description('Deploys an immutable AI BankApp image to the local team-b namespace and runs smoke/DAST checks')
+            description('Pulls an immutable AI BankApp OCI Helm chart from Docker Hub, deploys it to team-b, and runs smoke/DAST checks')
             parameters {
               stringParam('IMAGE_TAG', 'team-b-latest',
                           'Docker image tag produced by Team B CI')
+              stringParam('CHART_VERSION', '0.1.1',
+                          'OCI Helm chart version produced by Team B CI')
             }
             logRotator { numToKeep(20) }
             definition {

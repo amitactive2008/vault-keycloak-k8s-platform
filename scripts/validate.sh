@@ -62,6 +62,8 @@ if command -v helm >/dev/null 2>&1; then
   helm lint 03-keycloak/keycloak-chart -f 03-keycloak/values.yaml
   helm lint 06-application/team-a-webapp/webapp-chart \
     -f 06-application/team-a-webapp/values.yaml
+  helm lint 10-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp \
+    -f 10-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml
 else
   info "SKIP Helm lint (helm not installed)"
 fi

@@ -1,0 +1,7 @@
+apiVersion: v2
+name: ai-bankapp-chart
+description: Team B AI BankApp with MySQL, Ollama, Vault Agent, and Gateway API
+type: application
+version: 0.1.0
+appVersion: "team-b-latest"
+kubeVersion: ">=1.29.0-0"
