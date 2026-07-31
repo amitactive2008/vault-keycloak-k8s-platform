@@ -42,6 +42,10 @@ spec:
       labels:
         {{- include "ai-bankapp.componentSelectorLabels" (dict "root" . "component" "ollama") | nindent 8 }}
     spec:
+      securityContext:
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ollama
           image: "{{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}"
@@ -51,6 +55,7 @@ spec:
             capabilities:
               drop:
                 - ALL
+            readOnlyRootFilesystem: true
           ports:
             - name: http
               containerPort: 11434
@@ -71,7 +76,11 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /root/.ollama
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: models
           persistentVolumeClaim:
             claimName: {{ include "ai-bankapp.fullname" . }}-ollama
+        - name: tmp
+          emptyDir: {}

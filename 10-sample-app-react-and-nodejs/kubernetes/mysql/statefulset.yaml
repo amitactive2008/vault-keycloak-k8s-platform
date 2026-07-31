@@ -20,9 +20,16 @@ spec:
         app: sample-react-app-mysql
         team: team-a
     spec:
+      securityContext:
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: mysql
           image: mysql:8.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
           ports:
             - name: mysql
               containerPort: 3306
@@ -67,6 +74,19 @@ spec:
           volumeMounts:
             - name: mysql-data
               mountPath: /var/lib/mysql
+            - name: mysql-files
+              mountPath: /var/lib/mysql-files
+            - name: mysql-run
+              mountPath: /var/run/mysqld
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: mysql-files
+          emptyDir: {}
+        - name: mysql-run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: mysql-data

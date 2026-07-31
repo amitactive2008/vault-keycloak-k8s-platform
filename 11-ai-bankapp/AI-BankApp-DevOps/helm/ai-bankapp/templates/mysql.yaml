@@ -51,6 +51,7 @@ spec:
           imagePullPolicy: {{ .Values.mysql.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
           command: ["/bin/bash", "-c"]
           args:
             - source /vault/secrets/mysql.env && exec docker-entrypoint.sh mysqld
@@ -74,6 +75,19 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/mysql
+            - name: mysql-files
+              mountPath: /var/lib/mysql-files
+            - name: mysql-run
+              mountPath: /var/run/mysqld
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: mysql-files
+          emptyDir: {}
+        - name: mysql-run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: data

@@ -16,6 +16,7 @@ team-b/ai-bankapp/ci
   ├── Checkstyle (audit)
   ├── Semgrep
   ├── Maven package (tests skipped)
+  ├── Trivy rendered-Helm misconfiguration gate
   ├── BuildKit OCI image build
   ├── Trivy
   ├── Docker Hub image push
@@ -62,6 +63,7 @@ local-platform behavior was implemented in the Jenkins pipelines.
 | Checkstyle | Audit-only |
 | Semgrep | Blocking Java, OWASP Top 10, and secret rules |
 | Maven build | `clean package -DskipTests` as requested |
+| Helm security | Trivy renders the Team B values and blocks on High/Critical misconfigurations |
 | Container build | Remote BuildKit packages the JAR produced by the Maven stage |
 | Trivy | Blocks on fixed High/Critical findings before push |
 | Registry push | Docker Hub immutable and `team-b-latest` tags |
@@ -225,6 +227,13 @@ helm template ai-bankapp \
   --namespace team-b \
   -f 11-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml \
   --set-string image.tag=team-b-latest
+
+trivy config \
+  --severity HIGH,CRITICAL \
+  --exit-code 1 \
+  --helm-values 11-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml \
+  --helm-set-string image.tag=team-b-latest \
+  11-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp
 ```
 
 The first CD run uses Helm's `--take-ownership` option to adopt resources

@@ -92,16 +92,18 @@ The CI jobs perform:
 1. Application source checkout.
 2. `npm ci` plus API syntax checks or client tests.
 3. Gitleaks scanning.
-4. OWASP Dependency-Check using `/vault/secrets/nvd-api-key`. This
+4. A blocking Trivy scan of the canonical Kubernetes manifests. HIGH or
+   CRITICAL misconfigurations stop the pipeline before an image is published.
+5. OWASP Dependency-Check using `/vault/secrets/nvd-api-key`. This
    stage is temporarily skipped with `when { expression { false } }`; remove
    that `when` block from both CI Jenkinsfiles to re-enable it.
-5. Non-blocking SonarQube analysis. A scanner outage marks the stage unstable
+6. Non-blocking SonarQube analysis. A scanner outage marks the stage unstable
    without suppressing image delivery. The quality-gate wait is temporarily
    disabled until the SonarQube-to-Jenkins webhook is verified.
-6. BuildKit multi-platform build for `linux/amd64,linux/arm64`.
-7. Docker Hub push using the Vault-injected username and token.
-8. Trivy image scanning.
-9. Automatic start of the matching CD job.
+7. BuildKit multi-platform build for `linux/amd64,linux/arm64`.
+8. Docker Hub push using the Vault-injected username and token.
+9. Trivy image scanning.
+10. Automatic start of the matching CD job.
 
 Images are published as:
 

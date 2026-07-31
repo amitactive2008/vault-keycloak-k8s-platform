@@ -78,6 +78,25 @@ pipeline {
       }
     }
 
+    stage('Helm Security Scan') {
+      steps {
+        container('trivy') {
+          dir("${APP_DIR}") {
+            sh '''
+              trivy config \
+                --severity HIGH,CRITICAL \
+                --exit-code 1 \
+                --format json \
+                --output helm/trivy-config-report.json \
+                --helm-values helm/team-b-values.yaml \
+                --helm-set-string image.tag="$IMAGE_TAG" \
+                "$CHART_DIR"
+            '''
+          }
+        }
+      }
+    }
+
     stage('Build Scan Image') {
       steps {
         container('docker-cli') {
@@ -183,7 +202,7 @@ pipeline {
 
   post {
     always {
-      archiveArtifacts artifacts: '11-ai-bankapp/AI-BankApp-DevOps/gitleaks-report.json,11-ai-bankapp/AI-BankApp-DevOps/semgrep-report.json,11-ai-bankapp/AI-BankApp-DevOps/trivy-report.json,11-ai-bankapp/AI-BankApp-DevOps/target/*.jar,11-ai-bankapp/AI-BankApp-DevOps/helm/dist/*.tgz',
+      archiveArtifacts artifacts: '11-ai-bankapp/AI-BankApp-DevOps/gitleaks-report.json,11-ai-bankapp/AI-BankApp-DevOps/semgrep-report.json,11-ai-bankapp/AI-BankApp-DevOps/trivy-report.json,11-ai-bankapp/AI-BankApp-DevOps/helm/trivy-config-report.json,11-ai-bankapp/AI-BankApp-DevOps/target/*.jar,11-ai-bankapp/AI-BankApp-DevOps/helm/dist/*.tgz',
         allowEmptyArchive: true
     }
     success {
