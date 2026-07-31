@@ -90,7 +90,7 @@ injector:
   # Used to define custom livenessProbe settings
   livenessProbe:
     # When a probe fails, Kubernetes will try failureThreshold times before giving up
-    failureThreshold: 2
+    failureThreshold: 3
     # Number of seconds after the container has started before probe initiates
     initialDelaySeconds: 5
     # How often (in seconds) to perform the probe
@@ -443,7 +443,7 @@ server:
     # Minimum consecutive successes for the probe to be considered successful after having failed
     successThreshold: 1
     # Number of seconds after which the probe times out.
-    timeoutSeconds: 3
+    timeoutSeconds: 5
   # Used to enable a livenessProbe for the pods
   livenessProbe:
     enabled: true
@@ -461,15 +461,17 @@ server:
     # Port number on which livenessProbe will be checked if httpGet is used as the livenessProbe handler
     port: 8200
     # When a probe fails, Kubernetes will try failureThreshold times before giving up
-    failureThreshold: 2
+    # Avoid restarting and therefore resealing Vault during short CPU-pressure
+    # events such as concurrent Jenkins image builds and vulnerability scans.
+    failureThreshold: 6
     # Number of seconds after the container has started before probe initiates
     initialDelaySeconds: 60
     # How often (in seconds) to perform the probe
-    periodSeconds: 5
+    periodSeconds: 10
     # Minimum consecutive successes for the probe to be considered successful after having failed
     successThreshold: 1
     # Number of seconds after which the probe times out.
-    timeoutSeconds: 3
+    timeoutSeconds: 10
 
   # Optional duration in seconds the pod needs to terminate gracefully.
   # See: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/

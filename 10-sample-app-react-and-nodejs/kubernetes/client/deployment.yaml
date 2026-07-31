@@ -33,7 +33,10 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-              add: ["NET_BIND_SERVICE"]
+              # The root Nginx master binds port 80, prepares its emptyDir
+              # cache, then drops workers to UID/GID 101. These are the only
+              # capabilities it retains.
+              add: ["CHOWN", "NET_BIND_SERVICE", "SETGID", "SETUID"]
             readOnlyRootFilesystem: true
           ports:
             - name: http

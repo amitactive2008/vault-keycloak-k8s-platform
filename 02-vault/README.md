@@ -62,7 +62,9 @@ kubectl get pods -n vault -w
 
 The liveness probe deliberately accepts Vault's sealed and uninitialized
 states. Those states make the pod NotReady, but must not restart the Vault
-process while an operator is applying unseal keys.
+process while an operator is applying unseal keys. It also tolerates one minute
+of transient probe failures so CPU pressure from local builds does not restart
+and reseal every HA member.
 
 ## Step 3 — Apply the HTTPRoute
 
