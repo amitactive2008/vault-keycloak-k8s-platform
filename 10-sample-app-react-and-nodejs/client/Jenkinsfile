@@ -133,6 +133,12 @@ pipeline {
                 's|^FROM node:|FROM --platform=$BUILDPLATFORM node:|' \
                 Dockerfile
               grep -q '^FROM --platform=\\$BUILDPLATFORM node:' Dockerfile
+              # Tests install dependencies in the workspace before this stage.
+              # Do not send that architecture-specific, ~250 MiB directory to
+              # BuildKit; the Dockerfile installs its own dependencies.
+              printf '%s\\n' \
+                node_modules build coverage reports .git \
+                > .dockerignore
               printf '%s' "$DOCKER_TOKEN" |
                 docker login --username "$DOCKER_USER" --password-stdin
               docker buildx create \
