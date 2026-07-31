@@ -176,7 +176,9 @@ controller:
                 caseSensitive: {}
               disableSslVerification: true
               logoutFromOpenidProvider: true
-              postLogoutRedirectUrl: "https://jenkins.kind.local"
+              # The trailing slash matches Keycloak's registered
+              # post.logout.redirect.uris value: https://jenkins.kind.local/*
+              postLogoutRedirectUrl: "https://jenkins.kind.local/"
               # Allow Jenkins API tokens to work without an active OIC browser session.
               # Required so that automation (scripts, API calls) can authenticate
               # using Jenkins-generated API tokens even when OIC is the security realm.

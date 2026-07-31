@@ -69,9 +69,9 @@ info "StatefulSet patched ✓"
 # Restart the pod to pick up the new probe spec
 info "Restarting jenkins-0 to apply new probes ..."
 kubectl delete pod jenkins-0 -n "$JENKINS_NS" 2>/dev/null || true
-kubectl wait pod -n "$JENKINS_NS" \
-  -l app.kubernetes.io/component=jenkins-controller \
-  --for=condition=Ready --timeout=600s
+# Waiting on the StatefulSet avoids a race where the pod does not yet exist
+# when kubectl wait evaluates its label selector.
+kubectl rollout status statefulset/jenkins -n "$JENKINS_NS" --timeout=600s
 
 info "Jenkins is Ready with tcpSocket probes ✓"
 

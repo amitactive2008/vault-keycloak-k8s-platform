@@ -477,6 +477,9 @@ unvalidated build parameter into a Vault path.
 2. Click **"Sign in"** (top-right header) or **"Log in to Jenkins"** (dashboard welcome message)
 3. Jenkins redirects you to Keycloak
 4. Log in with a Keycloak user → redirected back to Jenkins with your group permissions applied
+5. Signing out also ends the Keycloak session and returns to
+   `https://jenkins.kind.local/`; `setup.sh` registers this as a valid
+   post-logout redirect on the Keycloak client.
 
 > **Why anonymous read?** Without it, the OIC plugin intercepts every unauthenticated request and immediately redirects to Keycloak — users never see the Jenkins UI or get a chance to click a login button. The `anonymous-read` global role grants `Overall/Read` only, so unauthenticated users can see the dashboard but cannot view jobs, trigger builds, or access any sensitive data.
 
@@ -697,6 +700,7 @@ Alternatively, log in via Keycloak as `devops-user-1` (password: `password`) and
 | Symptom | Cause | Fix |
 |---|---|---|
 | Jenkins login fails with "Login provider denied" | Keycloak `groups` in scope | Verify `scopes: "openid email profile"` (no `groups`) in values |
+| Jenkins logout shows Keycloak `Invalid redirect uri` | Jenkins client is missing its post-logout redirect | Re-run `./setup.sh`; it registers `https://jenkins.kind.local/*` and synchronizes the site web origin |
 | Jenkins shows no Keycloak button | oic-auth plugin not installed | Check: `kubectl exec -n jenkins statefulset/jenkins -- ls /var/jenkins_home/plugins \| grep oic` |
 | team-a user sees all jobs | RBAC not applied | Re-run `./setup.sh` — JCasC should provision roles |
 | SonarQube OIDC button missing | Plugin not loaded or version incompatible | Check logs: `kubectl logs -n sonarqube -l app=sonarqube-sonarqube \| grep -i oidc` |

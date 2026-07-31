@@ -192,6 +192,8 @@ create_oidc_client() {
   local CLIENT_SECRET="$2"
   local REDIRECT_URI="$3"
   local DISPLAY_NAME="$4"
+  local WEB_ORIGIN="$5"
+  local POST_LOGOUT_REDIRECT_URI="${6:-}"
 
   EXISTS=$(kubectl exec -n "$KC_NS" "$KC_POD" -- \
     /opt/keycloak/bin/kcadm.sh get clients -r "$KC_REALM" \
@@ -214,7 +216,7 @@ create_oidc_client() {
       -s serviceAccountsEnabled=false \
       -s secret="${CLIENT_SECRET}" \
       -s "redirectUris=[\"${REDIRECT_URI}\",\"http://localhost:8080${REDIRECT_URI#https://jenkins.kind.local}\",\"http://localhost:8080${REDIRECT_URI#https://sonarqube.kind.local}\"]" \
-      -s "webOrigins=[\"https://${CLIENT_ID}.kind.local\"]" 2>/dev/null
+      -s "webOrigins=[\"${WEB_ORIGIN}\"]" 2>/dev/null
     info "Client '${CLIENT_ID}' created ✓"
   fi
 
@@ -228,8 +230,16 @@ create_oidc_client() {
   kubectl exec -n "$KC_NS" "$KC_POD" -- \
     /opt/keycloak/bin/kcadm.sh update "clients/${CLIENT_UUID}" -r "$KC_REALM" \
     -s "redirectUris=[\"${REDIRECT_URI}\"]" \
-    -s "webOrigins=[\"${REDIRECT_URI%/*}\"]" 2>/dev/null
+    -s "webOrigins=[\"${WEB_ORIGIN}\"]" 2>/dev/null
   info "Client '${CLIENT_ID}' redirectUris synced ✓"
+
+  if [ -n "${POST_LOGOUT_REDIRECT_URI}" ]; then
+    kubectl exec -n "$KC_NS" "$KC_POD" -- \
+      /opt/keycloak/bin/kcadm.sh update "clients/${CLIENT_UUID}" -r "$KC_REALM" \
+      -s "attributes={\"post.logout.redirect.uris\":\"${POST_LOGOUT_REDIRECT_URI}\"}" \
+      2>/dev/null
+    info "Client '${CLIENT_ID}' post-logout redirect synced ✓"
+  fi
 
   # Add groups claim mapper (flat names: devops, team-a, team-b)
   MAPPER_COUNT=$(kubectl exec -n "$KC_NS" "$KC_POD" -- \
@@ -270,14 +280,17 @@ MAPEOF
 # Jenkins OIDC client — redirect: /securityRealm/finishLogin
 create_oidc_client "jenkins" "${JENKINS_OIDC_SECRET}" \
   "${JENKINS_URL}/securityRealm/finishLogin" \
-  "Jenkins CI/CD"
+  "Jenkins CI/CD" \
+  "${JENKINS_URL}" \
+  "${JENKINS_URL}/*"
 
 # SonarQube OIDC client — redirect: /oauth2/callback/oidc
 # NOTE: 'sonarqube' is used as SAML client; 'sonarqube-oidc' is the OIDC client
 # used by the sonar-auth-oidc v3.0.0 plugin (sonar.auth.oidc.clientId=sonarqube-oidc)
 create_oidc_client "sonarqube-oidc" "${SONAR_OIDC_SECRET}" \
   "${SONAR_URL}/oauth2/callback/oidc" \
-  "SonarQube OIDC"
+  "SonarQube OIDC" \
+  "${SONAR_URL}"
 
 # ── Create realm roles for SonarQube group sync via OIDC ──────────────────────
 # sonar-auth-oidc reads the 'groups' claim from the JWT and syncs them to SonarQube
