@@ -1,0 +1,6 @@
+apiVersion: v2
+name: gitea-package-registry
+description: Single-node Gitea Package Registry for the local kind platform
+type: application
+version: 0.1.0
+appVersion: "1.26.4"

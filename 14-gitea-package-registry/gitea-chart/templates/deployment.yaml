@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  labels:
+    {{- include "gitea.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "gitea.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "gitea.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: gitea
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: prepare-trust-bundle
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              cat /etc/ssl/certs/ca-certificates.crt /platform-ca/tls.crt \
+                > /trusted-ca/ca-certificates.crt
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: platform-ca
+              mountPath: /platform-ca
+              readOnly: true
+            - name: trusted-ca
+              mountPath: /trusted-ca
+      containers:
+        - name: gitea
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: SSL_CERT_FILE
+              value: /trusted-ca/ca-certificates.crt
+            - name: GITEA__database__DB_TYPE
+              value: sqlite3
+            - name: GITEA__database__PATH
+              value: /var/lib/gitea/data/gitea.db
+            - name: GITEA__server__DOMAIN
+              value: {{ .Values.gateway.hostname | quote }}
+            - name: GITEA__server__ROOT_URL
+              value: {{ printf "https://%s/" .Values.gateway.hostname | quote }}
+            - name: GITEA__server__LOCAL_ROOT_URL
+              value: {{ printf "http://localhost:%v/" .Values.service.port | quote }}
+            - name: GITEA__server__HTTP_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: GITEA__server__PROTOCOL
+              value: http
+            - name: GITEA__server__DISABLE_SSH
+              value: "true"
+            - name: GITEA__security__INSTALL_LOCK
+              value: "true"
+            - name: GITEA__security__SECRET_KEY__FILE
+              value: /run/secrets/gitea/secret-key
+            - name: GITEA__security__INTERNAL_TOKEN__FILE
+              value: /run/secrets/gitea/internal-token
+            - name: GITEA__security__REVERSE_PROXY_TRUSTED_PROXIES
+              value: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+            - name: GITEA__service__DISABLE_REGISTRATION
+              value: "true"
+            - name: GITEA__service__REQUIRE_SIGNIN_VIEW
+              value: "true"
+            - name: GITEA__service__DISABLE_REGULAR_ORG_CREATION
+              value: "true"
+            - name: GITEA__service__ALLOW_ONLY_EXTERNAL_REGISTRATION
+              value: "true"
+            - name: GITEA__service__EXTERNAL_USER_DISABLE_FEATURES
+              value: deletion,manage_credentials,change_username
+            - name: GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION
+              value: "true"
+            - name: GITEA__oauth2_client__USERNAME
+              value: preferred_username
+            - name: GITEA__oauth2_client__UPDATE_AVATAR
+              value: "false"
+            - name: GITEA__packages__ENABLED
+              value: "true"
+            - name: GITEA__actions__ENABLED
+              value: "false"
+            - name: GITEA__repository__DISABLE_HTTP_GIT
+              value: "true"
+            - name: GITEA__other__SHOW_FOOTER_VERSION
+              value: "true"
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          startupProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/gitea
+            - name: config
+              mountPath: /etc/gitea
+            - name: runtime-credentials
+              mountPath: /run/secrets/gitea
+              readOnly: true
+            - name: trusted-ca
+              mountPath: /trusted-ca
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitea-data
+        - name: config
+          emptyDir: {}
+        - name: runtime-credentials
+          secret:
+            secretName: {{ .Values.runtimeSecret }}
+        - name: platform-ca
+          secret:
+            secretName: {{ .Values.caSecret }}
+        - name: trusted-ca
+          emptyDir: {}

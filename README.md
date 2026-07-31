@@ -18,7 +18,7 @@ A complete local platform running on a [kind](https://kind.sigs.k8s.io/) cluster
 | **Vault OIDC auth** | Vault OIDC → Keycloak `kind` realm |
 | **kubectl SSO** | kube-apiserver OIDC → Keycloak; per-team RBAC |
 | **Operations** | Prometheus/Grafana monitoring + Jenkins/SonarQube CI/CD |
-| **Artifact management** | Sonatype Nexus Repository — Docker, Helm, Maven, and raw hosted repositories |
+| **Artifact management** | Gitea Package Registry — Docker, Helm, Maven, and generic packages |
 | **CI/CD secrets** | Vault Agent injection for Docker Hub, NVD, and target-cluster kubeconfig |
 | **Sample apps** | Team A React/Node.js and Team B Spring Boot/Ollama workloads |
 
@@ -87,7 +87,7 @@ dependencies required by the application. See modules
 | `keycloak.kind.local` | Keycloak Admin + OIDC | HTTPS |
 | `team-a-webapp.kind.local` | Sample 2-tier webapp | HTTPS |
 | `ai-bankapp.kind.local` | Team B Spring Boot + Ollama banking demo | HTTPS |
-| `nexus.kind.local` | Sonatype Nexus Repository | HTTPS |
+| `gitea.kind.local` | Gitea Package Registry | HTTPS |
 
 ---
 
@@ -144,7 +144,7 @@ editing. See [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow and
 | 11 | [Argo CD](11-argocd/README.md) | GitOps layer | Planned |
 | 12 | [Velero backup](12-valero-backup/README.md) | Backup and restore | Planned |
 | 13 | [Istio](13-istio/README.md) | Service mesh experiments | Planned |
-| 14 | [Sonatype Nexus Repository](14-sonatype-nexus/README.md) | Team-scoped Maven snapshots, Docker, Helm, raw repositories, and Keycloak OIDC | Optional |
+| 14 | [Gitea Package Registry](14-gitea-package-registry/README.md) | Team-scoped Maven, Docker, Helm, generic packages, and Keycloak OIDC | Optional |
 
 Generated files such as Vault keys, OIDC kubeconfigs, CA copies, and Jenkins
 runtime credentials are deliberately ignored. Copy the corresponding

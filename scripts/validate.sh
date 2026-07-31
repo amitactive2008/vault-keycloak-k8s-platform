@@ -64,8 +64,8 @@ if command -v helm >/dev/null 2>&1; then
     -f 06-application/team-a-webapp/values.yaml
   helm lint 10-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp \
     -f 10-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml
-  helm lint 14-sonatype-nexus/nexus-chart \
-    -f 14-sonatype-nexus/values.yaml
+  helm lint 14-gitea-package-registry/gitea-chart \
+    -f 14-gitea-package-registry/values.yaml
 else
   info "SKIP Helm lint (helm not installed)"
 fi
