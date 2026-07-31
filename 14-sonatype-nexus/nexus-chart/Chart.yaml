@@ -1,0 +1,7 @@
+apiVersion: v2
+name: nexus-repository
+description: Single-node Sonatype Nexus Repository for the local kind platform
+type: application
+version: 0.1.0
+appVersion: "3.94.0"
+

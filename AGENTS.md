@@ -32,6 +32,7 @@ that preserve the existing learning flow.
 | `09-sample-app-react-and-nodejs/` | Team A application deployment and CI/CD manifests |
 | `10-ai-bankapp/` | Team B Spring Boot, MySQL, Ollama, Vault, and Jenkins example |
 | `11-argocd/`, `12-valero-backup/`, `13-istio/` | Planned modules; see their local READMEs |
+| `14-sonatype-nexus/` | Nexus Repository, hosted artifact repositories, and Keycloak OIDC |
 
 ## Change rules
 

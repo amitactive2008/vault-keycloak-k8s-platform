@@ -1,0 +1,32 @@
+replicaCount: 1
+
+image:
+  repository: sonatype/nexus3
+  tag: 3.94.0
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8081
+
+persistence:
+  size: 20Gi
+  storageClassName: standard
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    cpu: "2"
+    memory: 3Gi
+
+jvm:
+  minHeap: 768m
+  maxHeap: 1536m
+  maxDirectMemory: 768m
+
+gateway:
+  name: native-gateway
+  namespace: default
+  hostname: nexus.kind.local
+

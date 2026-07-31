@@ -1,0 +1,13 @@
+image:
+  repository: sonatype/nexus3
+  tag: 3.94.0
+
+persistence:
+  size: 20Gi
+  storageClassName: standard
+
+gateway:
+  name: native-gateway
+  namespace: default
+  hostname: nexus.kind.local
+

@@ -9,6 +9,7 @@
 *.pem
 *.p12
 *.pfx
+*.lic
 
 # Local environment and override files
 .env
