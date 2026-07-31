@@ -62,7 +62,7 @@ local-platform behavior was implemented in the Jenkins pipelines.
 | Checkstyle | Audit-only |
 | Semgrep | Blocking Java, OWASP Top 10, and secret rules |
 | Maven build | `clean package -DskipTests` as requested |
-| Container build | Remote BuildKit |
+| Container build | Remote BuildKit packages the JAR produced by the Maven stage |
 | Trivy | Blocks on fixed High/Critical findings before push |
 | Registry push | Docker Hub immutable and `team-b-latest` tags |
 | Chart publish | OCI chart `ai-bankapp-chart:0.1.<BUILD_NUMBER>` on Docker Hub |
@@ -73,6 +73,11 @@ The Maven baseline uses Spring Boot `3.5.14`, Spring Framework `6.2.19`,
 Tomcat `10.1.55`, Thymeleaf `3.1.5.RELEASE`, and Jackson `2.21.4`. Keep these
 versions at or above their documented security floors; Trivy remains the
 blocking check for newly disclosed fixed vulnerabilities.
+
+The Dockerfile intentionally consumes `target/bankapp-*.jar`; run
+`./mvnw clean package -DskipTests` before building the image outside Jenkins.
+This prevents Maven dependencies from being resolved a second time inside
+BuildKit.
 
 Gitleaks scans the application source tree with `--no-git`; the imported
 repository's former Git history is not part of this repository.

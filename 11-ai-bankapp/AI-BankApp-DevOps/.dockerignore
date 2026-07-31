@@ -2,7 +2,8 @@
 .idea
 .vscode
 screenshots
-target
+target/*
+!target/bankapp-*.jar
 bankapp-image.tar
 *-report.json
 reports
