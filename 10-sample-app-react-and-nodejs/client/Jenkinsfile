@@ -127,7 +127,12 @@ pipeline {
               # React output is architecture-neutral. Build it on BuildKit's
               # native platform instead of compiling under QEMU once per
               # target architecture.
-              sed -i '0,/^FROM node:/s//FROM --platform=$BUILDPLATFORM node:/' Dockerfile
+              # The docker-cli image uses BusyBox sed, which does not support
+              # GNU sed's 0,/pattern/ address form.
+              sed -i \
+                's|^FROM node:|FROM --platform=$BUILDPLATFORM node:|' \
+                Dockerfile
+              grep -q '^FROM --platform=\\$BUILDPLATFORM node:' Dockerfile
               printf '%s' "$DOCKER_TOKEN" |
                 docker login --username "$DOCKER_USER" --password-stdin
               docker buildx create \
