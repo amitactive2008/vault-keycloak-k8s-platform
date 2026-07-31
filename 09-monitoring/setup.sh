@@ -27,7 +27,7 @@
 #   - /etc/hosts entries added for all monitoring hostnames
 #
 # Usage:
-#   cd 07-monitoring
+#   cd 09-monitoring
 #   chmod +x setup.sh
 #   ./setup.sh
 #
@@ -122,7 +122,10 @@ CURRENT_CORE=$(kubectl get configmap coredns -n kube-system \
 ALL_HOSTS_PRESENT=true
 for host in keycloak.kind.local vault.kind.local grafana.kind.local \
             prometheus.kind.local alertmanager.kind.local \
-            blackbox-exporter.kind.local team-a-webapp.kind.local; do
+            blackbox-exporter.kind.local team-a-webapp.kind.local \
+            sample.kind.local gitea.kind.local jenkins.kind.local \
+            jenkins-resources.kind.local sonarqube.kind.local \
+            sample-react-app.kind.local ai-bankapp.kind.local; do
   if ! echo "$CURRENT_CORE" | grep -q "${host}"; then
     ALL_HOSTS_PRESENT=false
     break
@@ -150,6 +153,12 @@ hosts = [
     "blackbox-exporter.kind.local",
     "team-a-webapp.kind.local",
     "sample.kind.local",
+    "gitea.kind.local",
+    "jenkins.kind.local",
+    "jenkins-resources.kind.local",
+    "sonarqube.kind.local",
+    "sample-react-app.kind.local",
+    "ai-bankapp.kind.local",
 ]
 hosts_block = "\n".join(f"           {gw_ip} {h}" for h in hosts)
 

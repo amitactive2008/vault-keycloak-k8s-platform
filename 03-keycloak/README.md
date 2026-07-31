@@ -60,7 +60,7 @@ echo "127.0.0.1 keycloak.kind.local" | sudo tee -a /etc/hosts
 ```bash
 cd 03-keycloak
 
-helm install keycloak ./keycloak-chart \
+helm upgrade --install keycloak ./keycloak-chart \
   -f ./values.yaml \
   --namespace keycloak --create-namespace
 ```
@@ -256,7 +256,7 @@ kubectl patch namespace keycloak --type=merge -p '{
     }
   }
 }'
-helm install keycloak ./keycloak-chart -f ./values.yaml --namespace keycloak
+helm upgrade --install keycloak ./keycloak-chart -f ./values.yaml --namespace keycloak
 ```
 
 **Keycloak pod stuck in `Init:0/1`**

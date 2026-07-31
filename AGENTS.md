@@ -26,13 +26,13 @@ that preserve the existing learning flow.
 | `03-keycloak/` | Keycloak and PostgreSQL Helm chart |
 | `04-vault-keycloak-integration/` | Vault OIDC policies and Keycloak integration |
 | `05-k8s-oidc-with-keycloak/` | Kubernetes API OIDC and team RBAC |
-| `06-application/` | Vault Agent sample web application |
-| `07-monitoring/` | Prometheus, Grafana, Alertmanager, blackbox exporter |
+| `06-gitea-package-registry/` | Gitea Package Registry and Keycloak OIDC/team synchronization |
+| `07-application/` | Vault Agent sample web application |
 | `08-jenkins/` | Jenkins, SonarQube, JCasC, and job definitions |
-| `09-sample-app-react-and-nodejs/` | Team A application deployment and CI/CD manifests |
-| `10-ai-bankapp/` | Team B Spring Boot, MySQL, Ollama, Vault, and Jenkins example |
-| `11-argocd/`, `12-valero-backup/`, `13-istio/` | Planned modules; see their local READMEs |
-| `14-gitea-package-registry/` | Gitea Package Registry and Keycloak OIDC/team synchronization |
+| `09-monitoring/` | Prometheus, Grafana, Alertmanager, blackbox exporter |
+| `10-sample-app-react-and-nodejs/` | Team A application deployment and CI/CD manifests |
+| `11-ai-bankapp/` | Team B Spring Boot, MySQL, Ollama, Vault, and Jenkins example |
+| `12-argocd/`, `13-istio/`, `14-valero-backup/` | Planned modules; see their local READMEs |
 
 ## Change rules
 

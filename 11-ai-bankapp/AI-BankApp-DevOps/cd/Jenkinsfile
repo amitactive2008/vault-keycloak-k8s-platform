@@ -20,7 +20,7 @@ pipeline {
     DEPLOYMENT  = 'ai-bankapp'
     RELEASE     = 'ai-bankapp'
     CHART       = 'oci://registry-1.docker.io/amitactive2008/ai-bankapp-chart'
-    VALUES_FILE = '10-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml'
+    VALUES_FILE = '11-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml'
   }
 
   options {

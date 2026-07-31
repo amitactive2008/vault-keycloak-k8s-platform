@@ -16,7 +16,7 @@ pipeline {
     IMAGE_NAME  = 'sample-react-app-client'
     NAMESPACE   = 'team-a'
     DEPLOYMENT  = 'sample-react-app-client'
-    MANIFESTS   = '09-sample-app-react-and-nodejs/kubernetes'
+    MANIFESTS   = '10-sample-app-react-and-nodejs/kubernetes'
     KUBECONFIG  = '/vault/secrets/kubeconfig'
     EXPECTED_CONTEXT = 'external'
   }

@@ -77,7 +77,7 @@ The kubeconfig permits Jenkins to target a different Kubernetes cluster; that
 cluster must already provide the namespace, Gateway API, TLS, and Vault
 dependencies required by the application. See modules
 [08](08-jenkins/README.md) and
-[09](09-sample-app-react-and-nodejs/README.md) for setup and rotation.
+[10](10-sample-app-react-and-nodejs/README.md) for setup and rotation.
 
 ### Hostnames
 
@@ -136,15 +136,15 @@ editing. See [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow and
 | 03 | [Keycloak](03-keycloak/README.md) | Identity provider, PostgreSQL, and realm import | Ready |
 | 04 | [Vault ↔ Keycloak](04-vault-keycloak-integration/README.md) | OIDC login and team policies | Ready |
 | 05 | [Kubernetes OIDC](05-k8s-oidc-with-keycloak/README.md) | kubectl SSO and namespace RBAC | Optional |
-| 06 | [Team A webapp](06-application/team-a-webapp/README.md) | Helm sample with Vault Agent injection | Optional |
-| 07 | [Monitoring](07-monitoring/README.md) | Prometheus, Grafana, Alertmanager, blackbox exporter | Optional |
+| 06 | [Gitea Package Registry](06-gitea-package-registry/README.md) | Team-scoped Maven, Docker, Helm, generic packages, and Keycloak OIDC | Optional |
+| 07 | [Team A webapp](07-application/team-a-webapp/README.md) | Helm sample with Vault Agent injection | Optional |
 | 08 | [Jenkins and SonarQube](08-jenkins/README.md) | Vault-backed CI/CD, code quality, JCasC, and team jobs | Optional |
-| 09 | [Team A React + Node.js app](09-sample-app-react-and-nodejs/README.md) | Jenkins pipelines and canonical Gateway API deployment manifests | Optional |
-| 10 | [Team B AI BankApp](10-ai-bankapp/AI-BankApp-DevOps/README.md) | Spring Boot, MySQL, Ollama, Vault, and Jenkins CI/CD | Optional |
-| 11 | [Argo CD](11-argocd/README.md) | GitOps layer | Planned |
-| 12 | [Velero backup](12-valero-backup/README.md) | Backup and restore | Planned |
+| 09 | [Monitoring](09-monitoring/README.md) | Prometheus, Grafana, Alertmanager, blackbox exporter | Optional |
+| 10 | [Team A React + Node.js app](10-sample-app-react-and-nodejs/README.md) | Jenkins pipelines and canonical Gateway API deployment manifests | Optional |
+| 11 | [Team B AI BankApp](11-ai-bankapp/AI-BankApp-DevOps/README.md) | Spring Boot, MySQL, Ollama, Vault, and Jenkins CI/CD | Optional |
+| 12 | [Argo CD](12-argocd/README.md) | GitOps layer | Planned |
 | 13 | [Istio](13-istio/README.md) | Service mesh experiments | Planned |
-| 14 | [Gitea Package Registry](14-gitea-package-registry/README.md) | Team-scoped Maven, Docker, Helm, generic packages, and Keycloak OIDC | Optional |
+| 14 | [Velero backup](14-valero-backup/README.md) | Backup and restore | Planned |
 
 Generated files such as Vault keys, OIDC kubeconfigs, CA copies, and Jenkins
 runtime credentials are deliberately ignored. Copy the corresponding
@@ -306,18 +306,34 @@ kubectl get pods -n team-a   # opens browser → Keycloak login
 
 ---
 
-### Step 6 — Deploy the sample webapp (optional)
+### Step 6 — Deploy Gitea Package Registry (optional)
+
+Install Gitea in `artifactory`, configure Keycloak OIDC, and synchronize the
+team package organizations:
+
+```bash
+cd 06-gitea-package-registry
+./setup.sh
+./configure-keycloak.sh
+```
+
+See the [Gitea module guide](06-gitea-package-registry/README.md) for the local
+hostname and access model.
+
+---
+
+### Step 7 — Deploy the sample webapp (optional)
 
 2-tier app in the `team-a` namespace with Vault Agent secret injection.
 
 ```bash
-cd 06-application/team-a-webapp
+cd 07-application/team-a-webapp
 
 echo "127.0.0.1 team-a-webapp.kind.local" | sudo tee -a /etc/hosts
 
 chmod +x vault-setup.sh && ./vault-setup.sh
 
-helm install team-a-webapp ./webapp-chart \
+helm upgrade --install team-a-webapp ./webapp-chart \
   -f ./values.yaml \
   --namespace team-a --create-namespace
 
@@ -330,12 +346,14 @@ helm install team-a-webapp ./webapp-chart \
 
 After the core setup, continue with the module-specific guides:
 
-- [07 — Monitoring](07-monitoring/README.md)
+- [06 — Gitea Package Registry](06-gitea-package-registry/README.md)
+- [07 — Team A sample webapp](07-application/team-a-webapp/README.md)
 - [08 — Jenkins and SonarQube](08-jenkins/README.md)
-- [09 — Team A React + Node.js application](09-sample-app-react-and-nodejs/README.md)
-- [10 — Team B AI BankApp](10-ai-bankapp/AI-BankApp-DevOps/README.md)
+- [09 — Monitoring](09-monitoring/README.md)
+- [10 — Team A React + Node.js application](10-sample-app-react-and-nodejs/README.md)
+- [11 — Team B AI BankApp](11-ai-bankapp/AI-BankApp-DevOps/README.md)
 
-Modules 11–13 are documented placeholders and are not yet deployable.
+Modules 12–14 are documented placeholders and are not yet deployable.
 
 ---
 

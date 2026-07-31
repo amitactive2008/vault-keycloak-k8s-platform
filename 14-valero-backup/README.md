@@ -1,4 +1,4 @@
-# 12 — Velero backup (planned)
+# 14 — Velero backup (planned)
 
 This module is reserved for backup and restore examples. The directory name is
 kept for compatibility, although the upstream project is named **Velero**.
@@ -10,4 +10,3 @@ Planned scope:
 - restore verification for Vault, Keycloak, and application data
 
 Do not store cloud credentials or backup archives in Git.
-

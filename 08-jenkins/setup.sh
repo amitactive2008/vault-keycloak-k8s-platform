@@ -121,9 +121,12 @@ hosts = [
     "blackbox-exporter.kind.local",
     "team-a-webapp.kind.local",
     "sample.kind.local",
+    "gitea.kind.local",
     "jenkins.kind.local",
     "jenkins-resources.kind.local",
     "sonarqube.kind.local",
+    "sample-react-app.kind.local",
+    "ai-bankapp.kind.local",
 ]
 hosts_block = "\n".join(f"           {gw_ip} {h}" for h in hosts)
 
@@ -381,17 +384,11 @@ info "HTTPRoutes applied ✓"
 section "Step 9 — Waiting for Jenkins and SonarQube to be Ready"
 
 info "Waiting for Jenkins (may take 5–10 minutes for plugin downloads)..."
-kubectl rollout status deployment/jenkins -n "$JENKINS_NS" --timeout=600s \
-  || kubectl wait pod -n "$JENKINS_NS" -l app.kubernetes.io/component=jenkins-controller \
-     --for=condition=Ready --timeout=600s
+kubectl rollout status statefulset/jenkins -n "$JENKINS_NS" --timeout=600s
 
 info "Waiting for SonarQube (may take 3–5 minutes)..."
-kubectl wait pod -n "$SONAR_NS" \
-  -l app="sonarqube-sonarqube" \
-  --for=condition=Ready --timeout=600s 2>/dev/null \
-  || kubectl wait pod -n "$SONAR_NS" \
-     -l "app.kubernetes.io/name=sonarqube" \
-     --for=condition=Ready --timeout=600s
+kubectl rollout status statefulset/sonarqube-sonarqube \
+  -n "$SONAR_NS" --timeout=600s
 
 info "Both services Ready ✓"
 
@@ -401,7 +398,7 @@ section "Step 10 — Configuring SonarQube (OIDC + groups + projects)"
 info "Starting port-forward to SonarQube (localhost:19000)..."
 kubectl port-forward -n "$SONAR_NS" svc/sonarqube-sonarqube 19000:9000 &
 PF_SONAR=$!
-trap 'kill $PF_SONAR 2>/dev/null; wait $PF_SONAR 2>/dev/null; true' EXIT
+trap 'kill "$PF_SONAR" 2>/dev/null || true; wait "$PF_SONAR" 2>/dev/null || true' EXIT
 
 # Wait for SonarQube API
 RETRIES=60
@@ -530,8 +527,10 @@ create_sq_project() {
   info "  Permissions set for '${KEY}': ${GROUP} + devops ✓"
 }
 
-create_sq_project "react-app-team-a" "Team A React App" "team-a"
-create_sq_project "react-app-team-b" "Team B React App" "team-b"
+create_sq_project \
+  "sample-react-app-team-a-api" "Team A Sample React App API" "team-a"
+create_sq_project \
+  "sample-react-app-team-a-client" "Team A Sample React App Client" "team-a"
 
 # ── Step 11: Generate SonarQube token → store as K8s Secret ───────────────────
 section "Step 11 — Generating SonarQube analysis token for Jenkins"
@@ -562,7 +561,8 @@ else
 fi
 
 # Stop port-forward
-kill $PF_SONAR 2>/dev/null; wait $PF_SONAR 2>/dev/null; true
+kill "$PF_SONAR" 2>/dev/null || true
+wait "$PF_SONAR" 2>/dev/null || true
 trap - EXIT
 info "Port-forward stopped"
 
@@ -594,8 +594,8 @@ cat << EOF
 ║  /team-b/{ci, cd}/react-app                                             ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║  SonarQube projects:                                                    ║
-║   react-app-team-a  →  team-a + devops groups                           ║
-║   react-app-team-b  →  team-b + devops groups                           ║
+║   sample-react-app-team-a-api     → team-a + devops groups              ║
+║   sample-react-app-team-a-client  → team-a + devops groups              ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║  Test Keycloak users (password: password)                               ║
 ║   devops-user-1   →  admin everywhere                                   ║

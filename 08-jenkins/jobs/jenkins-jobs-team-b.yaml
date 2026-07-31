@@ -39,10 +39,10 @@ data:
                     remote {
                       url('https://github.com/amitactive2008/vault-keycloak-k8s-platform.git')
                     }
-                    branches('*/v5-codeX-gwApi-jenkins-reactApp')
+                    branches('*/v6-sonatype-valero')
                   }
                 }
-                scriptPath('10-ai-bankapp/AI-BankApp-DevOps/Jenkinsfile')
+                scriptPath('11-ai-bankapp/AI-BankApp-DevOps/Jenkinsfile')
                 lightweight(true)
               }
             }
@@ -65,10 +65,10 @@ data:
                     remote {
                       url('https://github.com/amitactive2008/vault-keycloak-k8s-platform.git')
                     }
-                    branches('*/v5-codeX-gwApi-jenkins-reactApp')
+                    branches('*/v6-sonatype-valero')
                   }
                 }
-                scriptPath('10-ai-bankapp/AI-BankApp-DevOps/cd/Jenkinsfile')
+                scriptPath('11-ai-bankapp/AI-BankApp-DevOps/cd/Jenkinsfile')
                 lightweight(true)
               }
             }

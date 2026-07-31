@@ -395,7 +395,7 @@ cat << 'EOF'
 ║     # macOS: add to system keychain                             ║
 ║     sudo security add-trusted-cert -d -r trustRoot \           ║
 ║       -k /Library/Keychains/System.keychain \                  ║
-║       keycloak/k8s-oidc/keycloak-local-ca.crt                  ║
+║       05-k8s-oidc-with-keycloak/keycloak-local-ca.crt          ║
 ║                                                                 ║
 ║  4. Use kubeconfig-oidc.yaml:                                   ║
 ║     export KUBECONFIG=~/.kube/config:05-k8s-oidc-with-keycloak/kubeconfig-oidc.yaml ║

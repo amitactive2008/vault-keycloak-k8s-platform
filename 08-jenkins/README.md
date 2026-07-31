@@ -91,8 +91,7 @@ Keycloak (kind realm, sonarqube OIDC client)
     │  groups sync
     └── group permissions
         ├── devops  → global admin
-        ├── team-a  → react-app-team-a project
-        └── team-b  → react-app-team-b project
+        └── team-a  → sample-react-app-team-a-api/client projects
 
 Jenkins Agent pods (ephemeral, Kubernetes plugin)
     ├── CI ServiceAccount: jenkins-ci
@@ -177,8 +176,8 @@ Jenkins
 | Keycloak group | SonarQube access |
 |---|---|
 | `devops` | Global admin — all projects |
-| `team-a` | `react-app-team-a` project only |
-| `team-b` | `react-app-team-b` project only |
+| `team-a` | `sample-react-app-team-a-api` and `sample-react-app-team-a-client` |
+| `team-b` | No SonarQube project currently; AI BankApp uses Semgrep and Trivy |
 
 ---
 
@@ -491,8 +490,8 @@ unvalidated build parameter into a Vault path.
 | Username | Group | Jenkins | SonarQube |
 |---|---|---|---|
 | `devops-user-1` | devops | Admin (all) | Admin (all) |
-| `team-a-user-1` | team-a | team-a folder only | react-app-team-a only |
-| `team-b-user-1` | team-b | team-b folder only | react-app-team-b only |
+| `team-a-user-1` | team-a | team-a folder only | Team A API and client projects |
+| `team-b-user-1` | team-b | team-b folder only | No project currently |
 
 ---
 

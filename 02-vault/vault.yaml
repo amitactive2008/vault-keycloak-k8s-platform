@@ -453,7 +453,11 @@ server:
     # - -c
     # - /vault/userconfig/mylivenessscript/run.sh
     # Path for the livenessProbe to use httpGet as the livenessProbe handler
-    path: "/v1/sys/health?standbyok=true"
+    # A sealed Vault still has a live process and needs to remain running so an
+    # operator can unseal it. Treat sealed/uninitialized health responses as
+    # successful for liveness; readiness continues to keep them out of Service
+    # endpoints until unsealed.
+    path: "/v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204"
     # Port number on which livenessProbe will be checked if httpGet is used as the livenessProbe handler
     port: 8200
     # When a probe fails, Kubernetes will try failureThreshold times before giving up
@@ -1246,4 +1250,3 @@ serverTelemetry:
       #    for: 5m
       #    labels:
       #      severity: critical
-

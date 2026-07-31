@@ -8,7 +8,7 @@ pipeline {
   }
 
   environment {
-    APP_DIR    = '10-ai-bankapp/AI-BankApp-DevOps'
+    APP_DIR    = '11-ai-bankapp/AI-BankApp-DevOps'
     REGISTRY   = 'amitactive2008'
     IMAGE_NAME = 'ai-bankapp'
     IMAGE_TAG  = "team-b-${BUILD_NUMBER}"
@@ -183,7 +183,7 @@ pipeline {
 
   post {
     always {
-      archiveArtifacts artifacts: '10-ai-bankapp/AI-BankApp-DevOps/gitleaks-report.json,10-ai-bankapp/AI-BankApp-DevOps/semgrep-report.json,10-ai-bankapp/AI-BankApp-DevOps/trivy-report.json,10-ai-bankapp/AI-BankApp-DevOps/target/*.jar,10-ai-bankapp/AI-BankApp-DevOps/helm/dist/*.tgz',
+      archiveArtifacts artifacts: '11-ai-bankapp/AI-BankApp-DevOps/gitleaks-report.json,11-ai-bankapp/AI-BankApp-DevOps/semgrep-report.json,11-ai-bankapp/AI-BankApp-DevOps/trivy-report.json,11-ai-bankapp/AI-BankApp-DevOps/target/*.jar,11-ai-bankapp/AI-BankApp-DevOps/helm/dist/*.tgz',
         allowEmptyArchive: true
     }
     success {

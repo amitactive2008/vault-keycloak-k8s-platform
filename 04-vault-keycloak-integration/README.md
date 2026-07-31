@@ -88,7 +88,8 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-The script is **idempotent** — re-running skips resources that already exist.
+The script is **idempotent** — re-running updates the existing external groups
+and aliases in place instead of creating duplicate identity groups.
 
 ### What each step does
 

@@ -1,4 +1,4 @@
-# 09 — Team A React and Node.js CI/CD
+# 10 — Team A React and Node.js CI/CD
 
 This module deploys the sample user-management application into the `team-a`
 namespace. Jenkins builds the API and client, pushes multi-platform images to
@@ -12,7 +12,7 @@ repositories:
 | Content | Repository | Branch |
 |---|---|---|
 | React client and Node.js API source | `https://github.com/amitactive2008/DevSecOps-Mega-Project.git` | Jenkins parameter `SOURCE_BRANCH` (default: `dev`) |
-| Jenkinsfiles and Kubernetes manifests | This platform repository | `v5-codeX-gwApi-jenkins-reactApp` until these changes are merged |
+| Jenkinsfiles and Kubernetes manifests | This platform repository | `v6-sonatype-valero` until these changes are merged |
 
 The Jenkins jobs use this platform repository as their SCM so Jenkins can load
 the local pipeline definitions. Each CI pipeline then checks out the application
@@ -52,7 +52,7 @@ and seeders, and starts the server.
 ## Files in this module
 
 ```text
-09-sample-app-react-and-nodejs/
+10-sample-app-react-and-nodejs/
 ├── api/
 │   ├── Jenkinsfile                 # API CI
 │   └── cd/Jenkinsfile              # API CD
@@ -164,7 +164,7 @@ Run commands from the repository root.
 ### 1. Configure Vault and Team A bootstrap resources
 
 ```bash
-./09-sample-app-react-and-nodejs/vault-setup.sh
+./10-sample-app-react-and-nodejs/vault-setup.sh
 ```
 
 The script is idempotent where practical. It:

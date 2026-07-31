@@ -1,4 +1,4 @@
-# 10 — Team B AI BankApp
+# 11 — Team B AI BankApp
 
 This module packages the imported Spring Boot banking demo for the local kind
 platform. Jenkins builds and scans the application, pushes both a
@@ -147,7 +147,7 @@ username and access token.
 ### 3. Configure application secrets and Vault Agent access
 
 ```bash
-./10-ai-bankapp/AI-BankApp-DevOps/vault-setup.sh
+./11-ai-bankapp/AI-BankApp-DevOps/vault-setup.sh
 ```
 
 The script generates missing database passwords, preserves existing values on
@@ -212,13 +212,13 @@ helm/
 Validate and render it locally:
 
 ```bash
-helm lint 10-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp \
-  -f 10-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml
+helm lint 11-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp \
+  -f 11-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml
 
 helm template ai-bankapp \
-  10-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp \
+  11-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp \
   --namespace team-b \
-  -f 10-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml \
+  -f 11-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml \
   --set-string image.tag=team-b-latest
 ```
 

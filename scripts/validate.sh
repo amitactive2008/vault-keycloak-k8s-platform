@@ -60,12 +60,12 @@ python3 scripts/check_markdown_links.py
 if command -v helm >/dev/null 2>&1; then
   info "linting Helm charts"
   helm lint 03-keycloak/keycloak-chart -f 03-keycloak/values.yaml
-  helm lint 06-application/team-a-webapp/webapp-chart \
-    -f 06-application/team-a-webapp/values.yaml
-  helm lint 10-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp \
-    -f 10-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml
-  helm lint 14-gitea-package-registry/gitea-chart \
-    -f 14-gitea-package-registry/values.yaml
+  helm lint 07-application/team-a-webapp/webapp-chart \
+    -f 07-application/team-a-webapp/values.yaml
+  helm lint 11-ai-bankapp/AI-BankApp-DevOps/helm/ai-bankapp \
+    -f 11-ai-bankapp/AI-BankApp-DevOps/helm/team-b-values.yaml
+  helm lint 06-gitea-package-registry/gitea-chart \
+    -f 06-gitea-package-registry/values.yaml
 else
   info "SKIP Helm lint (helm not installed)"
 fi

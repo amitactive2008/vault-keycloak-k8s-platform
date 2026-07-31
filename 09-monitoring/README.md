@@ -1,4 +1,4 @@
-# 07 — Monitoring Stack
+# 09 — Monitoring Stack
 
 Installs **Prometheus + Alertmanager + Grafana + Blackbox Exporter** on the kind cluster with:
 
@@ -101,7 +101,7 @@ EOF
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-helm install kube-prom prometheus-community/kube-prometheus-stack \
+helm upgrade --install kube-prom prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   --create-namespace \
   --values values.yaml \
@@ -116,7 +116,7 @@ kubectl wait pod -n monitoring -l app.kubernetes.io/name=prometheus \
 ### Step 3 — Install Blackbox Exporter
 
 ```bash
-helm install blackbox prometheus-community/prometheus-blackbox-exporter \
+helm upgrade --install blackbox prometheus-community/prometheus-blackbox-exporter \
   --namespace monitoring \
   --values blackbox-values.yaml \
   --version 11.15.1

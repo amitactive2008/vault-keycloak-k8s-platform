@@ -50,7 +50,7 @@ Envoy Gateway (native-gateway, default ns)
 Run `vault-setup.sh` once. It is idempotent.
 
 ```bash
-cd 06-application/team-a-webapp
+cd 07-application/team-a-webapp
 chmod +x vault-setup.sh
 ./vault-setup.sh
 ```
@@ -73,7 +73,7 @@ echo "127.0.0.1 team-a-webapp.kind.local" | sudo tee -a /etc/hosts
 ### Step 3 — Install via Helm
 
 ```bash
-helm install team-a-webapp ./webapp-chart \
+helm upgrade --install team-a-webapp ./webapp-chart \
   -f ./values.yaml \
   --namespace team-a --create-namespace
 ```

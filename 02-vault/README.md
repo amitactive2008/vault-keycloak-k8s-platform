@@ -49,7 +49,7 @@ echo "127.0.0.1 vault.kind.local" | sudo tee -a /etc/hosts
 helm repo add hashicorp https://helm.releases.hashicorp.com
 helm repo update
 
-helm install vault hashicorp/vault \
+helm upgrade --install vault hashicorp/vault \
   --values vault.yaml \
   --namespace vault --create-namespace
 ```
@@ -59,6 +59,10 @@ Watch pods start (they will be `0/1` until unsealed):
 ```bash
 kubectl get pods -n vault -w
 ```
+
+The liveness probe deliberately accepts Vault's sealed and uninitialized
+states. Those states make the pod NotReady, but must not restart the Vault
+process while an operator is applying unseal keys.
 
 ## Step 3 — Apply the HTTPRoute
 
@@ -259,10 +263,15 @@ kubectl get httproute -n vault
 
 ## Troubleshooting
 
-**Pods stuck at `0/1 Running` after install**
+**Pods remain `0/1 Running` after install**
 
 Expected — pods are sealed until you run `vault operator init` and `vault operator unseal`.
 Check pod logs: `kubectl logs -n vault vault-0`
+
+If sealed pods show `CrashLoopBackOff`, verify that the installed liveness path
+contains `sealedcode=204&uninitcode=204`, then reconcile the Helm release. A
+liveness probe that uses the default sealed response code kills the process
+before it can reliably be unsealed.
 
 **`https://vault.kind.local` returns 404 or connection refused**
 

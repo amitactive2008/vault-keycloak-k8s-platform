@@ -17,7 +17,7 @@
 #      so in-cluster pods (Vault Agent, Blackbox) can resolve it
 #
 # Usage:
-#   cd 09-sample-app-react-and-nodejs
+#   cd 10-sample-app-react-and-nodejs
 #   chmod +x vault-setup.sh
 #   ./vault-setup.sh
 #
@@ -227,9 +227,12 @@ hosts = [
     "blackbox-exporter.kind.local",
     "team-a-webapp.kind.local",
     "sample.kind.local",
+    "gitea.kind.local",
     "jenkins.kind.local",
+    "jenkins-resources.kind.local",
     "sonarqube.kind.local",
     "sample-react-app.kind.local",
+    "ai-bankapp.kind.local",
 ]
 hosts_block = "\n".join(f"           {gw_ip} {h}" for h in hosts)
 

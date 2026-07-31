@@ -386,35 +386,59 @@ kubectl exec -n "$VAULT_NS" vault-0 -- sh -c '
   OIDC_ACCESSOR=$(vault auth list | awk "/^oidc\// {print \$3}")
   echo "OIDC accessor: $OIDC_ACCESSOR"
 
-  # ── devops: full admin ──────────────────────────────────────
-  DEVOPS_ID=$(vault write -field=id identity/group \
-    name=devops type=external policies=devops-policy \
-    metadata=description="DevOps engineers — full Vault admin")
-  vault write identity/group-alias \
-    name="/devops" \
-    mount_accessor="$OIDC_ACCESSOR" \
-    canonical_id="$DEVOPS_ID"
-  echo "Group devops → devops-policy (alias: /devops)"
+  ensure_group_and_alias() {
+    GROUP_NAME="$1"
+    POLICY_NAME="$2"
+    ALIAS_NAME="$3"
+    DESCRIPTION="$4"
 
-  # ── team-a: scoped to secret/data/team-a/* ─────────────────
-  TEAM_A_ID=$(vault write -field=id identity/group \
-    name=team-a type=external policies=team-a-policy \
-    metadata=description="Team A — scoped to secret/data/team-a/*")
-  vault write identity/group-alias \
-    name="/team-a" \
-    mount_accessor="$OIDC_ACCESSOR" \
-    canonical_id="$TEAM_A_ID"
-  echo "Group team-a → team-a-policy (alias: /team-a)"
+    GROUP_ID=$(vault write -field=id identity/lookup/group \
+      name="$GROUP_NAME" 2>/dev/null || true)
+    if [ -n "$GROUP_ID" ]; then
+      vault write "identity/group/id/${GROUP_ID}" \
+        name="$GROUP_NAME" type=external policies="$POLICY_NAME" \
+        metadata=description="$DESCRIPTION" >/dev/null
+    else
+      GROUP_ID=$(vault write -field=id identity/group \
+        name="$GROUP_NAME" type=external policies="$POLICY_NAME" \
+        metadata=description="$DESCRIPTION")
+    fi
 
-  # ── team-b: scoped to secret/data/team-b/* ─────────────────
-  TEAM_B_ID=$(vault write -field=id identity/group \
-    name=team-b type=external policies=team-b-policy \
-    metadata=description="Team B — scoped to secret/data/team-b/*")
-  vault write identity/group-alias \
-    name="/team-b" \
-    mount_accessor="$OIDC_ACCESSOR" \
-    canonical_id="$TEAM_B_ID"
-  echo "Group team-b → team-b-policy (alias: /team-b)"
+    ALIAS_ID=""
+    for CANDIDATE_ID in $(vault list identity/group-alias/id 2>/dev/null |
+      awk "NR > 2 {print \$1}"); do
+      CANDIDATE_NAME=$(vault read -field=name \
+        "identity/group-alias/id/${CANDIDATE_ID}" 2>/dev/null || true)
+      CANDIDATE_ACCESSOR=$(vault read -field=mount_accessor \
+        "identity/group-alias/id/${CANDIDATE_ID}" 2>/dev/null || true)
+      if [ "$CANDIDATE_NAME" = "$ALIAS_NAME" ] &&
+         [ "$CANDIDATE_ACCESSOR" = "$OIDC_ACCESSOR" ]; then
+        ALIAS_ID="$CANDIDATE_ID"
+        break
+      fi
+    done
+
+    if [ -n "$ALIAS_ID" ]; then
+      vault write "identity/group-alias/id/${ALIAS_ID}" \
+        name="$ALIAS_NAME" \
+        mount_accessor="$OIDC_ACCESSOR" \
+        canonical_id="$GROUP_ID" >/dev/null
+    else
+      vault write identity/group-alias \
+        name="$ALIAS_NAME" \
+        mount_accessor="$OIDC_ACCESSOR" \
+        canonical_id="$GROUP_ID" >/dev/null
+    fi
+
+    echo "Group ${GROUP_NAME} → ${POLICY_NAME} (alias: ${ALIAS_NAME})"
+  }
+
+  ensure_group_and_alias \
+    devops devops-policy /devops "DevOps engineers — full Vault admin"
+  ensure_group_and_alias \
+    team-a team-a-policy /team-a "Team A — scoped to secret/data/team-a/*"
+  ensure_group_and_alias \
+    team-b team-b-policy /team-b "Team B — scoped to secret/data/team-b/*"
 '
 
 # ── Step 8: Seed sample secrets ─────────────────────────────────

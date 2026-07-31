@@ -77,7 +77,7 @@ echo "127.0.0.1 gitea.kind.local" | sudo tee -a /etc/hosts
 ## Step 2 — Deploy and provision Gitea
 
 ```bash
-cd 14-gitea-package-registry
+cd 06-gitea-package-registry
 ./setup.sh
 ```
 
