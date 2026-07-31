@@ -108,6 +108,27 @@ kubectl get secret nexus-admin-credentials -n artifactory \
 echo
 ```
 
+### Log in to the Nexus UI
+
+Open `https://nexus.kind.local` and select **Sign In**. Before Keycloak OIDC is
+configured, use:
+
+- Username: `admin`
+- Password: the runtime password retrieved from
+  `Secret/nexus-admin-credentials` by the command above
+
+The password is generated during setup and is intentionally not stored in Git.
+If the browser cannot resolve the hostname, confirm that `/etc/hosts` contains:
+
+```text
+127.0.0.1 nexus.kind.local
+```
+
+After installing a Nexus Repository Pro/trial license and completing Steps 3–5,
+select **Continue with SSO** instead. Keycloak users then sign in with their
+normal Keycloak credentials. The local `admin` login remains available for
+recovery.
+
 ## Step 3 — Configure Keycloak
 
 ```bash
