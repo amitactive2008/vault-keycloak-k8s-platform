@@ -65,7 +65,7 @@ local-platform behavior was implemented in the Jenkins pipelines.
 | Maven build | `clean package -DskipTests` as requested |
 | Helm security | Trivy renders the Team B values and blocks on High/Critical misconfigurations |
 | Container build | Remote BuildKit packages the JAR produced by the Maven stage |
-| Trivy | Blocks on fixed High/Critical findings before push |
+| Trivy | Blocks on fixed High/Critical findings before push; the Java scan has a 15-minute timeout for its large database |
 | Registry push | Docker Hub immutable and `team-b-latest` tags |
 | Chart publish | OCI chart `ai-bankapp-chart:0.1.<BUILD_NUMBER>` on Docker Hub |
 | Deployment | Pull exact OCI chart version and run namespace-scoped Helm upgrade |
