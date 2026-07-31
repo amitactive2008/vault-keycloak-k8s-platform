@@ -69,10 +69,10 @@ local-platform behavior was implemented in the Jenkins pipelines.
 | Deployment | Pull exact OCI chart version and run namespace-scoped Helm upgrade |
 | OWASP ZAP | Audit-only scan after rollout |
 
-The Maven baseline uses Spring Boot `3.5.14`, Tomcat `10.1.55`, Thymeleaf
-`3.1.5.RELEASE`, and Jackson `2.21.4`. Keep these versions at or above their
-documented security floors; Trivy remains the blocking check for newly
-disclosed fixed vulnerabilities.
+The Maven baseline uses Spring Boot `3.5.14`, Spring Framework `6.2.19`,
+Tomcat `10.1.55`, Thymeleaf `3.1.5.RELEASE`, and Jackson `2.21.4`. Keep these
+versions at or above their documented security floors; Trivy remains the
+blocking check for newly disclosed fixed vulnerabilities.
 
 Gitleaks scans the application source tree with `--no-git`; the imported
 repository's former Git history is not part of this repository.
